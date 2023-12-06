@@ -40,6 +40,13 @@ mod hr_alg3;
 // Async communication: ADC value from main (ADC) task to HR processing task
 static SAMPLE_SIGNAL: Signal<CriticalSectionRawMutex, u32> = Signal::new();
 
+//
+// Gymnastics to pass peripherals into tasks.
+// The "type" trick gets around tasks not allowing generics yet.
+// The "static" instances allow the peripherals, which themselves are statics,
+// to keep their static lifetime designation when passed in the task, which
+// itself is static.
+//
 type UART = embassy_stm32::usart::UartTx<'static, embassy_stm32::peripherals::USART3, embassy_stm32::peripherals::DMA1_CH1>;
 static UART_INST: StaticCell<UART> = StaticCell::new();
 
@@ -58,8 +65,8 @@ const DUMP_MODE: bool = true;
 // Simply call hr::tick(sample) and output something based on results
 #[embassy_executor::task]
 async fn process_hr(uart_ref: &'static mut UART,
-                    led1_ref: &'static mut LED1,
-                    led3_ref: &'static mut LED3,
+                    led1_ref: &'static mut LED1, // Used to show pulse
+                    led3_ref: &'static mut LED3, // Used to show "lp" flag for debugging
                     button1_ref: &'static mut BUTTON1,
                     display_value_atomic: &'static AtomicU32)
 {
@@ -74,7 +81,7 @@ async fn process_hr(uart_ref: &'static mut UART,
         let sample = SAMPLE_SIGNAL.wait().await;
         let lp = button1_ref.get_level() == Level::Low;
         led3_ref.set_level(if !lp { High } else { Low });
-        let (n, cooked_sample, peak, state, hr_update) = hr.tick(lp, sample);
+        let (n, cooked_sample, _peak, state, hr_update) = hr.tick(lp, sample);
         if hr_update != 0 {
             display_value_atomic.store(hr.hr() as u32, Ordering::Relaxed);
         }
@@ -100,6 +107,7 @@ async fn process_hr(uart_ref: &'static mut UART,
             count0 = count;
             n0 = n;
         }
+        // Put some feedback on the console if no pulse for 3 seconds
         if n-n0 > 3000 {
             let (dc, thresh) = hr.help();
             msg.clear();
@@ -168,9 +176,10 @@ async fn main(spawner: Spawner) {
     _ = spawner.spawn(c5412::process(c5412pins_ref, &DISP_VALUE_ATOMIC));
 
     // Setup the ADC. This is a bit too fancy right now!
+    // At the very least, should use metapac to poke ADC registers
     let mut delay = Delay;
     let mut adc = Adc::new(p.ADC1, &mut delay);
-    // Turn on ADC oversampling - reduces noise 
+    // Turn on ADC oversampling - reduces noise
     unsafe { let p : *mut u32 = 0x4002200c as *mut u32; *p = 0x80000008; } // 008=12 bit
     unsafe { let p : *mut u32 = 0x40022010 as *mut u32; *p = 0x000f0001; } // f=16x oversample, 001=ovs on
     // Turn down clock - reduces noise
