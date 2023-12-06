@@ -54,6 +54,8 @@ static BUTTON1_INST: StaticCell<BUTTON1> = StaticCell::new();
 
 const DUMP_MODE: bool = false;
 
+// Heartrate computation task
+// Simply call hr::tick(sample) and output something based on results
 #[embassy_executor::task]
 async fn process_hr(uart_ref: &'static mut UART,
                     led1_ref: &'static mut LED1,
@@ -108,34 +110,31 @@ async fn process_hr(uart_ref: &'static mut UART,
 }
 
 //
-// Main function performs as ADC task
+// Main function sets up I/O and then performs as ADC sampling task
 //
-
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let mut p = embassy_stm32::init(Default::default());
+
+    // Set up I/O used to HR processing task (to communicate UX, debuging) and
+    // place them in statics so we can pass into another task
     let button1 = Input::new(p.PC13, Pull::None);
-    let led1 = Output::new(p.PB0, Level::High, Speed::Low);
-    let led3 = Output::new(p.PB14, Level::High, Speed::Low);
-    let uart = UartTx::new(p.USART3, p.PD8, p.DMA1_CH1, Config::default()).unwrap();
-    let mut delay = Delay;
-    let mut adc = Adc::new(p.ADC1, &mut delay);
-
-    // Turn on ADC oversampling
-    // 0x4002200c: 0x80000008
-    // 0x40022010: 0x000f0001 // f=16x oversample, 001 = oversample on
-    unsafe { let p : *mut u32 = 0x4002200c as *mut u32; *p = 0x80000008; } // 008=12 bit
-    unsafe { let p : *mut u32 = 0x40022010 as *mut u32; *p = 0x000f0001; } // f=16x oversample, 001=ovs on
-    // Turn down clock
-    unsafe { let p : *mut u32 = 0x40022308 as *mut u32; *p = 6 << 18; } // Slow down clock to /12 (0x0018)
-
-    let uart_ref = UART_INST.init(uart);
-    let led1_ref = LED1_INST.init(led1);
-    let led3_ref = LED3_INST.init(led3);
     let button1_ref = BUTTON1_INST.init(button1);
+
+    let led1 = Output::new(p.PB0, Level::High, Speed::Low);
+    let led1_ref = LED1_INST.init(led1);
+
+    let led3 = Output::new(p.PB14, Level::High, Speed::Low);
+    let led3_ref = LED3_INST.init(led3);
+
+    let uart = UartTx::new(p.USART3, p.PD8, p.DMA1_CH1, Config::default()).unwrap();
+    let uart_ref = UART_INST.init(uart);
+
+    // Kick off the HR processing task
     _ = spawner.spawn(process_hr(uart_ref, led1_ref, led3_ref, button1_ref,
                                  &DISP_VALUE_ATOMIC));
 
+    // Set up the display, and place in static to pass into another task
     let c5412pins = c5412::C5412Pins {
         p11: Output::new(p.PD7, Level::High, Speed::Low).degrade(),
         p12: Output::new(p.PD6, Level::High, Speed::Low).degrade(),
@@ -164,11 +163,22 @@ async fn main(spawner: Spawner) {
     };
     let c5412pins_ref = C5412PINS_INST.init(c5412pins);
 
+    // Kick off the display task
     _ = spawner.spawn(c5412::process(c5412pins_ref, &DISP_VALUE_ATOMIC));
 
+    // Setup the ADC. This is a bit too fancy right now!
+    let mut delay = Delay;
+    let mut adc = Adc::new(p.ADC1, &mut delay);
+    // Turn on ADC oversampling - reduces noise 
+    unsafe { let p : *mut u32 = 0x4002200c as *mut u32; *p = 0x80000008; } // 008=12 bit
+    unsafe { let p : *mut u32 = 0x40022010 as *mut u32; *p = 0x000f0001; } // f=16x oversample, 001=ovs on
+    // Turn down clock - reduces noise
+    unsafe { let p : *mut u32 = 0x40022308 as *mut u32; *p = 6 << 18; } // Slow down clock to /12 (0x0018)
+
+    // Peform the ADC task
     let mut now = Instant::now().as_millis();
     loop {
-        now += 1;
+        now += 1; // Sample at 1kHz -- Using "tick-hz-1_000_000" feature of embassy-time
         Timer::at(Instant::from_millis(now)).await;
         let sample = adc.read(&mut p.PA0) as u32;
         SAMPLE_SIGNAL.signal(sample);

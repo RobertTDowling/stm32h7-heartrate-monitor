@@ -21,7 +21,7 @@ use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicU32;
 
 // Async communication with other threads
-static COUNT_ATOMIC: AtomicU32 = AtomicU32::new(0); // Profiling: # of refreshes
+static COUNT_ATOMIC: AtomicU32 = AtomicU32::new(0); // Profiling: # of refreshes so far
 
 pub struct C5412Pins {
     pub p11: embassy_stm32::gpio::Output<'static, AnyPin>,
@@ -145,21 +145,23 @@ pub async fn process(c5412pins_ref: &'static mut C5412Pins,
         COUNT_ATOMIC.store(count, Ordering::Relaxed);
         let x : u32 = value_atomic.load(Ordering::Relaxed); // What to display
 
-        c5412pins_ref.all_off();
-        Timer::after_millis(OFF_TIME_MS).await;
+        // Cathode 1: The 10's digit
         c5412pins_ref.common_1_on();
         c5412pins_ref.digit_on(((x/10)%10) as u8);
-        Timer::after_millis(ON_TIME_MS).await;
-
+         Timer::after_millis(ON_TIME_MS).await;
         c5412pins_ref.all_off();
         Timer::after_millis(OFF_TIME_MS).await;
+
+        // Cathode 2: The 1's digit
         c5412pins_ref.common_2_on();
         c5412pins_ref.digit_on((x%10) as u8);
         Timer::after_millis(ON_TIME_MS).await;
+        c5412pins_ref.all_off();
+        Timer::after_millis(OFF_TIME_MS).await;
 
         count+=1;
     }
 }
 
-// Get number of display refreshes since boot
+// Thread safe: Get number of display refreshes since boot
 pub fn get_count() -> u32 { COUNT_ATOMIC.load(Ordering::Relaxed) }
