@@ -148,7 +148,7 @@ pub async fn process(c5412pins_ref: &'static mut C5412Pins,
         // Cathode 1: The 10's digit
         c5412pins_ref.common_1_on();
         c5412pins_ref.digit_on(((x/10)%10) as u8);
-         Timer::after_millis(ON_TIME_MS).await;
+        Timer::after_millis(ON_TIME_MS).await;
         c5412pins_ref.all_off();
         Timer::after_millis(OFF_TIME_MS).await;
 
