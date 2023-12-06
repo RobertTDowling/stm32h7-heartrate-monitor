@@ -82,6 +82,7 @@ async fn process_hr(uart_ref: &'static mut UART,
         let lp = button1_ref.get_level() == Level::Low;
         led3_ref.set_level(if !lp { High } else { Low });
         let (n, cooked_sample, _peak, state, hr_update) = hr.tick(lp, sample);
+        // If we got a heartrate update, reflect it on LED
         if hr_update != 0 {
             display_value_atomic.store(hr.hr() as u32, Ordering::Relaxed);
         }
@@ -92,11 +93,13 @@ async fn process_hr(uart_ref: &'static mut UART,
             core::fmt::write(&mut msg, format_args!("{} {}\n",  cooked_sample, if lp {1} else {0})).unwrap();
             // core::fmt::write(&mut msg, format_args!("{}\n",  sample)).unwrap();
             _ = (uart_ref).write(msg.as_bytes()).await;
+            // NOTE: we restart loop early here to avoid other UART output!
             continue;
         }
+        // If we got a heartrate update, reflect it on UART console
         if hr_update != 0 {
             let rate = hr.hr();
-            let (a, b) = hr.above_below();
+            let (a, b) = hr.above_below(); // FIXME: This is a slow operation
             let d = a-b;
             let count = c5412::get_count();
             let refresh = 1000f64 * (count-count0) as f64 / (n-n0) as f64;
