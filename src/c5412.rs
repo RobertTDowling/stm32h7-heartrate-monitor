@@ -1,3 +1,18 @@
+// Parallel 7-segment driver for C5412 (legacy) LED
+// C5412 is a 2-digit 14-segment, common cathode LED similar to
+// https://www.luckylight.cn/media/component/data-sheet/KWA-541CVB.pdf
+//
+// There is no custom constructor, you just populate the GPIOs you're using into
+// C5412Pins: 8 each for the 2 common cathodes (p11..p18, p21..p28) and 8 for
+// the 7 segments (the center horizontal is split into 2 segments)
+//
+// This driver is designed for no series resistances, so it expects to PWM even
+// pins that are "on" all the time to avoid frying the display.
+//
+// Turns out during debugging the display didn't fry anyway, because I think the
+// STM32H7 doesn't drive its GPIO that hard, but still, we should be more
+// circumspect.
+
 use embassy_stm32::gpio::AnyPin;
 use embassy_stm32::gpio::Level::{High,Low};
 use embassy_time::Timer;
@@ -5,8 +20,9 @@ use embassy_time::Timer;
 use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicU32;
 
-static COUNT: AtomicU32 = AtomicU32::new(0);
-static VALUE: AtomicU32 = AtomicU32::new(0);
+// Async communication with other threads
+static COUNT: AtomicU32 = AtomicU32::new(0); // For profiling: # of refreshes
+static VALUE: AtomicU32 = AtomicU32::new(0); // Value, 0-99, to display
 
 pub struct C5412Pins {
     pub p11: embassy_stm32::gpio::Output<'static, AnyPin>,
@@ -121,33 +137,35 @@ impl C5412Pins {
 
 #[embassy_executor::task]
 pub async fn process(c5412pins_ref: &'static mut C5412Pins) {
-    const M : u64 = 5;
-    const N : u64 = 2;
-    let mut count : u32 = 0;
+    const ON_TIME_MS : u64 = 2;
+    const OFF_TIME_MS : u64 = 5;
+    let mut count : u32 = 0; // For profiling the refresh rate. Just counts
     loop {
         COUNT.store(count, Ordering::Relaxed);
-        let x : u32 = VALUE.load(Ordering::Relaxed);
+        let x : u32 = VALUE.load(Ordering::Relaxed); // What to display
 
         c5412pins_ref.all_off();
-        Timer::after_millis(M).await;
+        Timer::after_millis(OFF_TIME_MS).await;
         c5412pins_ref.common_1_on();
         c5412pins_ref.digit_on(((x/10)%10) as u8);
-        Timer::after_millis(N).await;
+        Timer::after_millis(ON_TIME_MS).await;
 
         c5412pins_ref.all_off();
-        Timer::after_millis(M).await;
+        Timer::after_millis(OFF_TIME_MS).await;
         c5412pins_ref.common_2_on();
         c5412pins_ref.digit_on((x%10) as u8);
-        Timer::after_millis(N).await;
+        Timer::after_millis(ON_TIME_MS).await;
 
         count+=1;
     }
 }
 
+// API: call `set_value` with your two digit integer, 0-99
 pub fn set_value(value: u32) {
     VALUE.store(value, Ordering::Relaxed);
 }
 
+// For profiling
 pub fn get_count() -> u32 {
     COUNT.load(Ordering::Relaxed)
 }
