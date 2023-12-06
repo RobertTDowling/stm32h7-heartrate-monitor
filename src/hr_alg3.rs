@@ -2,13 +2,6 @@
 
 use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
 
-// Fixme: Where can these live so I don't duplicate them?
-// Argues for not having task defined in here... Refactor it 
-type UART = embassy_stm32::usart::UartTx<'static, embassy_stm32::peripherals::USART3, embassy_stm32::peripherals::DMA1_CH1>;
-type LED1 = embassy_stm32::gpio::Output<'static, embassy_stm32::peripherals::PB0>;
-type LED3 = embassy_stm32::gpio::Output<'static, embassy_stm32::peripherals::PB14>;
-type BUTTON1 = embassy_stm32::gpio::Input<'static, embassy_stm32::peripherals::PC13>;
-
 const CRAZY_HI: i32 =3000;
 const CRAZY_LO: i32 =-1000;
 const DC_ALPHA: f64 = 1.0/1000.0;

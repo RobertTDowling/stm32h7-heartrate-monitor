@@ -20,6 +20,9 @@ use embassy_time::Timer;
 use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicU32;
 
+// Async communication with other threads
+static COUNT_ATOMIC: AtomicU32 = AtomicU32::new(0); // Profiling: # of refreshes
+
 pub struct C5412Pins {
     pub p11: embassy_stm32::gpio::Output<'static, AnyPin>,
     pub p12: embassy_stm32::gpio::Output<'static, AnyPin>,
@@ -133,14 +136,13 @@ impl C5412Pins {
 
 #[embassy_executor::task]
 pub async fn process(c5412pins_ref: &'static mut C5412Pins,
-                     count_atomic: &'static AtomicU32, // Profiling
                      value_atomic: &'static AtomicU32) // What value to display
 {
     const ON_TIME_MS : u64 = 2;
     const OFF_TIME_MS : u64 = 5;
     let mut count : u32 = 0; // For profiling the refresh rate. Just counts
     loop {
-        count_atomic.store(count, Ordering::Relaxed);
+        COUNT_ATOMIC.store(count, Ordering::Relaxed);
         let x : u32 = value_atomic.load(Ordering::Relaxed); // What to display
 
         c5412pins_ref.all_off();
@@ -158,3 +160,6 @@ pub async fn process(c5412pins_ref: &'static mut C5412Pins,
         count+=1;
     }
 }
+
+// Get number of display refreshes since boot
+pub fn get_count() -> u32 { COUNT_ATOMIC.load(Ordering::Relaxed) }

@@ -26,9 +26,8 @@ use core::sync::atomic::AtomicU32;
 
 mod c5412;
 
-// Async communication with other threads
-static COUNT: AtomicU32 = AtomicU32::new(0); // For profiling: # of refreshes
-static VALUE: AtomicU32 = AtomicU32::new(0); // Value, 0-99, to display
+// Async communication: value to display, 0-99, to c5412 task
+static DISP_VALUE_ATOMIC: AtomicU32 = AtomicU32::new(0);
 
 static C5412PINS_INST: StaticCell<c5412::C5412Pins> = StaticCell::new();
 
@@ -38,7 +37,7 @@ static C5412PINS_INST: StaticCell<c5412::C5412Pins> = StaticCell::new();
 
 mod hr_alg3;
 
-// Async communication of ADC value from main (ADC) task to HR processing task
+// Async communication: ADC value from main (ADC) task to HR processing task
 static SAMPLE_SIGNAL: Signal<CriticalSectionRawMutex, u32> = Signal::new();
 
 type UART = embassy_stm32::usart::UartTx<'static, embassy_stm32::peripherals::USART3, embassy_stm32::peripherals::DMA1_CH1>;
@@ -60,7 +59,7 @@ async fn process_hr(uart_ref: &'static mut UART,
                     led1_ref: &'static mut LED1,
                     led3_ref: &'static mut LED3,
                     button1_ref: &'static mut BUTTON1,
-                    display_value: &'static AtomicU32)
+                    display_value_atomic: &'static AtomicU32)
 {
     let mut msg : String<64> = String::new();
     msg.clear();
@@ -75,7 +74,7 @@ async fn process_hr(uart_ref: &'static mut UART,
         led3_ref.set_level(if !lp { High } else { Low });
         let (n, cooked_sample, peak, state, hr_update) = hr.tick(lp, sample);
         if hr_update != 0 {
-            display_value.store(hr.hr() as u32, Ordering::Relaxed);
+            display_value_atomic.store(hr.hr() as u32, Ordering::Relaxed);
         }
         led1_ref.set_level(if state != 0 { High } else { Low });
         if DUMP_MODE {
@@ -91,7 +90,7 @@ async fn process_hr(uart_ref: &'static mut UART,
             let (a, b) = hr.above_below();
             let d = a-b;
             msg.clear();
-            let count = COUNT.load(Ordering::Relaxed);
+            let count = c5412::get_count();
             let refresh = 1000f64 * (count-count0) as f64 / (n-n0) as f64;
             core::fmt::write(&mut msg, format_args!("{} {} rate={:.2} refresh={:.2}\n",
                                                     n-n0, d, rate, refresh)).unwrap();
@@ -134,7 +133,8 @@ async fn main(spawner: Spawner) {
     let led1_ref = LED1_INST.init(led1);
     let led3_ref = LED3_INST.init(led3);
     let button1_ref = BUTTON1_INST.init(button1);
-    _ = spawner.spawn(process_hr(uart_ref, led1_ref, led3_ref, button1_ref, &VALUE));
+    _ = spawner.spawn(process_hr(uart_ref, led1_ref, led3_ref, button1_ref,
+                                 &DISP_VALUE_ATOMIC));
 
     let c5412pins = c5412::C5412Pins {
         p11: Output::new(p.PD7, Level::High, Speed::Low).degrade(),
@@ -164,7 +164,7 @@ async fn main(spawner: Spawner) {
     };
     let c5412pins_ref = C5412PINS_INST.init(c5412pins);
 
-    _ = spawner.spawn(c5412::process(c5412pins_ref, &COUNT, &VALUE));
+    _ = spawner.spawn(c5412::process(c5412pins_ref, &DISP_VALUE_ATOMIC));
 
     let mut now = Instant::now().as_millis();
     loop {
