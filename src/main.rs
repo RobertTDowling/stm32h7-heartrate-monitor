@@ -59,7 +59,7 @@ static LED3_INST: StaticCell<LED3> = StaticCell::new();
 type BUTTON1 = embassy_stm32::gpio::Input<'static, embassy_stm32::peripherals::PC13>;
 static BUTTON1_INST: StaticCell<BUTTON1> = StaticCell::new();
 
-const DUMP_MODE: bool = true;
+const DUMP_MODE: bool = false;
 
 // Heartrate computation task
 // Simply call hr::tick(sample) and output something based on results
@@ -81,7 +81,7 @@ async fn process_hr(uart_ref: &'static mut UART,
         let sample = SAMPLE_SIGNAL.wait().await;
         let lp = button1_ref.get_level() == Level::Low;
         led3_ref.set_level(if !lp { High } else { Low });
-        let (n, cooked_sample, _peak, state, hr_update) = hr.tick(lp, sample);
+        let (n, cooked_sample, _peak, state, hr_update) = hr.tick(lp, sample).await;
         // If we got a heartrate update, reflect it on LED
         if hr_update != 0 {
             display_value_atomic.store(hr.hr() as u32, Ordering::Relaxed);
@@ -99,7 +99,7 @@ async fn process_hr(uart_ref: &'static mut UART,
         // If we got a heartrate update, reflect it on UART console
         if hr_update != 0 {
             let rate = hr.hr();
-            let (a, b) = hr.above_below(); // FIXME: This is a slow operation
+            let (a, b) = hr.above_below().await; // This is a slow operation
             let d = a-b;
             let count = c5412::get_count();
             let refresh = 1000f64 * (count-count0) as f64 / (n-n0) as f64;

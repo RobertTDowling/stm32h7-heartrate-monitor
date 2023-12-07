@@ -1,5 +1,6 @@
 // hr_alg3: Heartrate Algorithm #3, including processing task
 
+use embassy_time::Timer;
 use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
 
 const CRAZY_HI: i32 =3000;
@@ -58,7 +59,7 @@ impl Hr {
     //    peak_flag: 1 if (the start of) a peak was detected on this tick
     //    state: 1 if collecting peaks samples, 0 if not
     //    hr_update_flag: 1 if heartrate value was updated this tick
-    pub fn tick(&mut self, lp: bool, raw_sample: u32) -> (usize, u32, u8, u8, u8) {
+    pub async fn tick(&mut self, lp: bool, raw_sample: u32) -> (usize, u32, u8, u8, u8) {
         self.peak_flag = 0;
         self.wild_flag = 0;
         let mut hr_update_flag : u8 = 0;
@@ -87,7 +88,7 @@ impl Hr {
             } else {
                 self.threshold_ema += (fx - self.threshold_ema) * THRESHOLD_ALPHA_DN;
                 if self.state == 1 && self.timer >= PEAK_DELAY {
-                    self.update_hr(self.n - PEAK_DELAY);
+                    self.update_hr(self.n - PEAK_DELAY).await;
                     hr_update_flag = 1;
                     self.state = 0;
                     self.timer = 0;
@@ -113,12 +114,13 @@ impl Hr {
     //   collected.  Process it to find the max, and then the inter-peak distance
     //   and ultimately, the heart rate.
     // Return the heartrate
-    fn update_hr(&mut self, start_n : usize) -> u32 {
+    async fn update_hr(&mut self, start_n : usize) -> u32 {
         // Search for peak in above data
         if self.above_pts.capacity() > 1 {
             let mut above_max = 0i32;
             let mut above_ix = 0usize;
             for (i, val) in self.above_pts.iter().enumerate() {
+                Timer::after_ticks(0).await; // yield
                 if above_max < *val {
                     above_max = *val;
                     above_ix = i;
@@ -142,11 +144,12 @@ impl Hr {
     // Compute max of peak samples and min of non-peak samples
     //   Takes 140us currently
     // Return a tuple with the (max, min) or essentially the range of the signal
-    pub fn above_below(&self) -> (i32, i32) {
+    pub async fn above_below(&self) -> (i32, i32) {
         let mut above = 0i32;
         if self.above_pts.capacity() > 1 {
             let i = self.above_pts.iter();
             for ii in i {
+                Timer::after_ticks(0).await; // yield
                 if above < *ii {
                     above = *ii;
                 }
@@ -156,6 +159,7 @@ impl Hr {
         if self.below_pts.capacity() > 1 {
             let i = self.below_pts.iter();
             for ii in i {
+                Timer::after_ticks(0).await; // yield
                 if below > *ii {
                     below = *ii;
                 }
