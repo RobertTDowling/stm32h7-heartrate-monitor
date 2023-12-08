@@ -13,7 +13,7 @@ use embassy_stm32::gpio::Level::{High,Low};
 
 use {defmt_rtt as _, panic_probe as _};
 
-use embassy_sync::signal::Signal;
+use embassy_sync::channel::Channel;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use static_cell::StaticCell;
 use heapless::String;
@@ -38,7 +38,8 @@ static C5412PINS_INST: StaticCell<c5412::C5412Pins> = StaticCell::new();
 mod hr_alg3;
 
 // Async communication: ADC value from main (ADC) task to HR processing task
-static SAMPLE_SIGNAL: Signal<CriticalSectionRawMutex, u32> = Signal::new();
+static SAMPLE_CHANNEL: Channel<CriticalSectionRawMutex, u32, 100> =
+    Channel::new();
 
 //
 // Gymnastics to pass peripherals into tasks.
@@ -78,7 +79,7 @@ async fn process_hr(uart_ref: &'static mut UART,
     let mut n0 = 0usize;
     let mut count0 = 0u32;
     loop {
-        let sample = SAMPLE_SIGNAL.wait().await;
+        let sample = SAMPLE_CHANNEL.receive().await;
         let lp = button1_ref.get_level() == Level::Low;
         led3_ref.set_level(if !lp { High } else { Low });
         let (n, cooked_sample, _peak, state, hr_update) = hr.tick(lp, sample).await;
@@ -190,10 +191,15 @@ async fn main(spawner: Spawner) {
 
     // Peform the ADC task
     let mut now = Instant::now().as_millis();
+    let mut overrun : u32 = 0;
     loop {
         now += 1; // Sample at 1kHz -- Using "tick-hz-1_000_000" feature of embassy-time
         Timer::at(Instant::from_millis(now)).await;
         let sample = adc.read(&mut p.PA0) as u32;
-        SAMPLE_SIGNAL.signal(sample);
+        let sent = SAMPLE_CHANNEL.try_send(sample);
+        match sent {
+            Ok(_) => { },
+            Err(_) => { overrun += 1; } // signal overrun somehow
+        }
     }
 }
