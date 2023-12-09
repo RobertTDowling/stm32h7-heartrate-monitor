@@ -23,10 +23,14 @@ use core::sync::atomic::AtomicU32;
 //
 // Debug configuration
 //
+enum DebugMode {
+    None,
+    HrInfo,
+    DumpSamples,
+    DumpTiming,
+}
 
-const DUMP_MODE: bool = false;
-const DUMP_MODE2: bool = false;
-const DUMP_MODE3: bool = false;
+const DEBUG_MODE : DebugMode = DebugMode::HrInfo;
 
 //
 // Things needed for 14-segment driver processing task
@@ -92,6 +96,7 @@ async fn process_hr(uart_ref: &'static mut UART,
         let now = Instant::now().as_micros();
         let adc_n = ADC_N_ATOMIC.load(Ordering::Relaxed);
         let lp = button1_ref.get_level() == Level::Low;
+        let count = c5412::get_count();
         led3_ref.set_level(if !lp { High } else { Low });
         let (proc_n, cooked_sample, _peak, state, hr_update) = hr.tick(lp, sample).await;
         // If we got a heartrate update, reflect it on LED
@@ -99,54 +104,48 @@ async fn process_hr(uart_ref: &'static mut UART,
             display_value_atomic.store(hr.hr() as u32, Ordering::Relaxed);
         }
         led1_ref.set_level(if state != 0 { High } else { Low });
-        if DUMP_MODE3 {
-            let dadc_n = adc_n-adc_n0;
-            let dnow = now-now0;
-            msg.clear();
-            core::fmt::write(&mut msg, format_args!("{} {}\n",  dadc_n, dnow)).unwrap();
-            _ = (uart_ref).write(msg.as_bytes()).await;
-            adc_n0 = adc_n;
-            now0 = now;
-            // NOTE: we restart loop early here to avoid other UART output!
-            continue;
-        }
-        if DUMP_MODE2 {
-            msg.clear();
-            core::fmt::write(&mut msg, format_args!("{}\n",  now-now0)).unwrap();
-            _ = (uart_ref).write(msg.as_bytes()).await;
-            now0 = now;
-            // NOTE: we restart loop early here to avoid other UART output!
-            continue;
-        }
-        if DUMP_MODE {
-            msg.clear();
-            // core::fmt::write(&mut msg, format_args!("{} {}\n",  sample, state+peak)).unwrap();
-            core::fmt::write(&mut msg, format_args!("{} {}\n",  cooked_sample, if lp {1} else {0})).unwrap();
-            // core::fmt::write(&mut msg, format_args!("{}\n",  sample)).unwrap();
-            _ = (uart_ref).write(msg.as_bytes()).await;
-            // NOTE: we restart loop early here to avoid other UART output!
-            continue;
-        }
-        // If we got a heartrate update, reflect it on UART console
-        if hr_update != 0 {
-            let count = c5412::get_count();
-            let rate = hr.hr();
-            let (a, b) = hr.above_below().await; // This is a slow operation
-            let _range = a-b;
-            let dcount = count-count0;
-            let dproc_n = proc_n-proc_n0;
-            let dadc_n = adc_n-adc_n0;
-            let dnow = now-now0;
-            let refresh = 1000f64 * dcount as f64 / dadc_n as f64;
-            let refresh = 1000000f64 * dcount as f64 / dnow as f64;
-            msg.clear();
-            core::fmt::write(&mut msg, format_args!("rate={:.2} refresh={:.2} dcount={} dproc={} dadc={} dnow={}\n",
-                                                    rate, refresh, dcount, dproc_n, dadc_n, dnow)).unwrap();
-            _ = (uart_ref).write(msg.as_bytes()).await;
-            count0 = count;
-            adc_n0 = adc_n;
-            proc_n0 = proc_n;
-            now0 = now;
+        match DEBUG_MODE {
+            DebugMode::DumpTiming => {
+                let dadc_n = adc_n-adc_n0;
+                let dnow = now-now0;
+                msg.clear();
+                core::fmt::write(&mut msg, format_args!("{} {}\n",  dadc_n, dnow)).unwrap();
+                _ = (uart_ref).write(msg.as_bytes()).await;
+                adc_n0 = adc_n;
+                now0 = now;
+                // NOTE: we restart loop early here to avoid other UART output!
+                continue;
+            }
+            DebugMode::DumpSamples => {
+                msg.clear();
+                core::fmt::write(&mut msg, format_args!("{} {}\n",  cooked_sample, if lp {1} else {0})).unwrap();
+                _ = (uart_ref).write(msg.as_bytes()).await;
+                // NOTE: we restart loop early here to avoid other UART output!
+                continue;
+            }
+            DebugMode::HrInfo => {
+                // If we got a heartrate update, reflect it on UART console
+                if hr_update != 0 {
+                    let rate = hr.hr();
+                    // let (a, b) = hr.above_below().await; // This is a slow operation // FIXME remove this and retime
+                    // let _range = a-b;
+                    let dcount = count-count0;
+                    let dproc_n = proc_n-proc_n0;
+                    let dadc_n = adc_n-adc_n0;
+                    let dnow = now-now0;
+                    let refresh = 1000f64 * dcount as f64 / dadc_n as f64;
+                    let refresh = 1000000f64 * dcount as f64 / dnow as f64;
+                    msg.clear();
+                    core::fmt::write(&mut msg, format_args!("rate={:.2} refresh={:.2} dcount={} dproc={} dadc={} dnow={}\n",
+                                                            rate, refresh, dcount, dproc_n, dadc_n, dnow)).unwrap();
+                    _ = (uart_ref).write(msg.as_bytes()).await;
+                    count0 = count;
+                    adc_n0 = adc_n;
+                    proc_n0 = proc_n;
+                    now0 = now;
+                }
+            }
+            DebugMode::None => {}
         }
         // Put some feedback on the console if no pulse for 3 seconds
         if proc_n-proc_n0 > 3000 {
