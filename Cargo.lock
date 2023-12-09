@@ -659,6 +659,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "stats"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "defmt",
+ "defmt-rtt",
+ "embassy-executor",
+ "embassy-stm32",
+ "libm",
+ "panic-probe",
+]
+
+[[package]]
 name = "stm32-fmc"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -697,6 +711,8 @@ dependencies = [
  "panic-probe",
  "ringbuffer",
  "static_cell",
+ "stats",
+ "time_stats",
 ]
 
 [[package]]
@@ -745,6 +761,21 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.39",
+]
+
+[[package]]
+name = "time_stats"
+version = "0.1.0"
+dependencies = [
+ "cortex-m",
+ "cortex-m-rt",
+ "defmt",
+ "defmt-rtt",
+ "embassy-executor",
+ "embassy-stm32",
+ "embassy-time",
+ "panic-probe",
+ "stats",
 ]
 
 [[package]]

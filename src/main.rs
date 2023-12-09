@@ -20,6 +20,9 @@ use heapless::String;
 use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicU32;
 
+use time_stats::TimeStats;
+use stats::Stats;
+
 //
 // Debug configuration
 //
@@ -91,8 +94,12 @@ async fn process_hr(uart_ref: &'static mut UART,
     let mut proc_n0 = 0usize;
     let mut adc_n0 = ADC_N_ATOMIC.load(Ordering::Relaxed);
     let mut now0 = Instant::now().as_micros();
+    let mut ts = TimeStats::new();
+    let mut s = Stats::new();
+    ts.loop_tick();
     loop {
         let sample = SAMPLE_CHANNEL.receive().await;
+        ts.loop_tick();
         let now = Instant::now().as_micros();
         let adc_n = ADC_N_ATOMIC.load(Ordering::Relaxed);
         let lp = button1_ref.get_level() == Level::Low;
@@ -135,9 +142,11 @@ async fn process_hr(uart_ref: &'static mut UART,
                     let dnow = now-now0;
                     let refresh = 1000f64 * dcount as f64 / dadc_n as f64;
                     let refresh = 1000000f64 * dcount as f64 / dnow as f64;
+                    ts.stats(&mut s);
                     msg.clear();
-                    core::fmt::write(&mut msg, format_args!("rate={:.2} refresh={:.2} dcount={} dproc={} dadc={} dnow={}\n",
-                                                            rate, refresh, dcount, dproc_n, dadc_n, dnow)).unwrap();
+                    core::fmt::write(&mut msg, format_args!("rate={:.2} refresh={:.2} dcount={} dproc={} dadc={} dnow={} n:{} {:.2}/{:.1}/{:.2} {:.2}\n",
+                                                            rate, refresh, dcount, dproc_n, dadc_n, dnow,
+                                                            s.n(), s.min(), s.mean(), s.max(), s.std())).unwrap();
                     _ = (uart_ref).write(msg.as_bytes()).await;
                     count0 = count;
                     adc_n0 = adc_n;
