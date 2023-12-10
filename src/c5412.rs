@@ -15,7 +15,7 @@
 
 use embassy_stm32::gpio::AnyPin;
 use embassy_stm32::gpio::Level::{High,Low};
-use embassy_time::Timer;
+use embassy_time::{Timer,Instant};
 
 use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicU32;
@@ -141,6 +141,7 @@ pub async fn process(c5412pins_ref: &'static mut C5412Pins,
     const ON_TIME_MS : u64 = 2;
     const OFF_TIME_MS : u64 = 5;
     let mut count : u32 = 0; // For profiling the refresh rate. Just counts
+    let mut when = Instant::now().as_millis();
     loop {
         COUNT_ATOMIC.store(count, Ordering::Relaxed);
         let x : u32 = value_atomic.load(Ordering::Relaxed); // What to display
@@ -148,16 +149,20 @@ pub async fn process(c5412pins_ref: &'static mut C5412Pins,
         // Cathode 1: The 10's digit
         c5412pins_ref.common_1_on();
         c5412pins_ref.digit_on(((x/10)%10) as u8);
-        Timer::after_millis(ON_TIME_MS).await;
+        when += ON_TIME_MS;
+        Timer::at(Instant::from_millis(when)).await;
         c5412pins_ref.all_off();
-        Timer::after_millis(OFF_TIME_MS).await;
+        when += OFF_TIME_MS;
+        Timer::at(Instant::from_millis(when)).await;
 
         // Cathode 2: The 1's digit
         c5412pins_ref.common_2_on();
         c5412pins_ref.digit_on((x%10) as u8);
-        Timer::after_millis(ON_TIME_MS).await;
+        when += ON_TIME_MS;
+        Timer::at(Instant::from_millis(when)).await;
         c5412pins_ref.all_off();
-        Timer::after_millis(OFF_TIME_MS).await;
+        when += OFF_TIME_MS;
+        Timer::at(Instant::from_millis(when)).await;
 
         count+=1;
     }
