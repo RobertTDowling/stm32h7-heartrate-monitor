@@ -26,14 +26,21 @@ use stats::Stats;
 //
 // Debug configuration
 //
+#[derive(PartialEq, Eq)]
+enum HrDebugMode {
+    Info,
+    Debug,
+    Stats
+}
+#[derive(PartialEq, Eq)]
 enum DebugMode {
     None,
-    HrInfo,
+    Hr(HrDebugMode),
     DumpSamples,
     DumpTiming,
 }
 
-const DEBUG_MODE : DebugMode = DebugMode::HrInfo;
+const DEBUG_MODE : DebugMode = DebugMode::Hr(HrDebugMode::Info);
 
 //
 // Things needed for 14-segment driver processing task
@@ -130,7 +137,7 @@ async fn process_hr(uart_ref: &'static mut UART,
                 // NOTE: we restart loop early here to avoid other UART output!
                 continue;
             }
-            DebugMode::HrInfo => {
+            DebugMode::Hr(m) => {
                 // If we got a heartrate update, reflect it on UART console
                 if hr_update != 0 {
                     let rate = hr.hr();
@@ -142,11 +149,24 @@ async fn process_hr(uart_ref: &'static mut UART,
                     let dnow = now-now0;
                     let refresh = 1000f64 * dcount as f64 / dadc_n as f64;
                     let refresh = 1000000f64 * dcount as f64 / dnow as f64;
-                    ts.stats(&mut s);
                     msg.clear();
-                    core::fmt::write(&mut msg, format_args!("rate={:.2} refresh={:.2} dcount={} dproc={} dadc={} dnow={} n:{} {:.2}/{:.1}/{:.2} {:.2}\n",
-                                                            rate, refresh, dcount, dproc_n, dadc_n, dnow,
-                                                            s.n(), s.min(), s.mean(), s.max(), s.std())).unwrap();
+                    match m {
+                        HrDebugMode::Stats => {
+                            ts.stats(&mut s);
+                            core::fmt::write(&mut msg, format_args!("rate={:.2} refresh={:.2} dcount={} dproc={} dadc={} dnow={} n:{} {:.2}/{:.1}/{:.2} {:.2}\n",
+                                                                    rate, refresh, dcount, dproc_n, dadc_n, dnow,
+                                                                    s.n(), s.min(), s.mean(), s.max(), s.std())).unwrap();
+                            ts.reset();
+                        }
+                        HrDebugMode::Debug => {
+                            core::fmt::write(&mut msg, format_args!("rate={:.2} refresh={:.2} dcount={} dproc={} dadc={} dnow={}\n",
+                                                                    rate, refresh, dcount, dproc_n, dadc_n, dnow)).unwrap();
+                        }
+                        HrDebugMode::Info => {
+                            let err = dadc_n as i32 - dproc_n as i32;
+                            core::fmt::write(&mut msg, format_args!("{:.2} {:.2} {}\n", rate, refresh, err)).unwrap();
+                        }
+                    }
                     _ = (uart_ref).write(msg.as_bytes()).await;
                     count0 = count;
                     adc_n0 = adc_n;
