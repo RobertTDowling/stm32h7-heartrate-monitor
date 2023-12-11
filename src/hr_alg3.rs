@@ -119,8 +119,9 @@ impl Hr {
         if self.above_pts.capacity() > 1 {
             let mut above_max = 0i32;
             let mut above_ix = 0usize;
+            /* This is slow when not --release, and it seems after_ticks is the problem */
             for (i, val) in self.above_pts.iter().enumerate() {
-                Timer::after_ticks(0).await; // yield
+                // Timer::after_ticks(0).await; // yield
                 if above_max < *val {
                     above_max = *val;
                     above_ix = i;

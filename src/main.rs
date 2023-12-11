@@ -30,7 +30,8 @@ use stats::Stats;
 enum HrDebugMode {
     Info,
     Debug,
-    Stats
+    Stats,
+    DisplayOverrun,
 }
 #[derive(PartialEq, Eq)]
 enum DebugMode {
@@ -40,7 +41,7 @@ enum DebugMode {
     DumpTiming,
 }
 
-const DEBUG_MODE : DebugMode = DebugMode::Hr(HrDebugMode::Info);
+const DEBUG_MODE : DebugMode = DebugMode::Hr(HrDebugMode::DisplayOverrun);
 
 //
 // Things needed for 14-segment driver processing task
@@ -165,6 +166,10 @@ async fn process_hr(uart_ref: &'static mut UART,
                         HrDebugMode::Info => {
                             let err = dadc_n as i32 - dproc_n as i32;
                             core::fmt::write(&mut msg, format_args!("{:.2} {:.2} {}\n", rate, refresh, err)).unwrap();
+                        }
+                        HrDebugMode::DisplayOverrun => {
+                            let overrun = c5412::get_overrun();
+                            core::fmt::write(&mut msg, format_args!("{:.2} {:.2} {}\n", rate, refresh, overrun)).unwrap();
                         }
                     }
                     _ = (uart_ref).write(msg.as_bytes()).await;

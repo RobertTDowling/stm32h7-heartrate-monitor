@@ -22,6 +22,7 @@ use core::sync::atomic::AtomicU32;
 
 // Async communication with other threads
 static COUNT_ATOMIC: AtomicU32 = AtomicU32::new(0); // Profiling: # of refreshes so far
+static OVERRUN_ATOMIC: AtomicU32 = AtomicU32::new(0); // Profiling: # of overruns
 
 pub struct C5412Pins {
     pub p11: embassy_stm32::gpio::Output<'static, AnyPin>,
@@ -142,8 +143,10 @@ pub async fn process(c5412pins_ref: &'static mut C5412Pins,
     const OFF_TIME_MS : u64 = 5;
     let mut count : u32 = 0; // For profiling the refresh rate. Just counts
     let mut when = Instant::now().as_millis();
+    let mut overrun : u32 = 0;
     loop {
         COUNT_ATOMIC.store(count, Ordering::Relaxed);
+        OVERRUN_ATOMIC.store(overrun, Ordering::Relaxed);
         let x : u32 = value_atomic.load(Ordering::Relaxed); // What to display
 
         // Cathode 1: The 10's digit
@@ -151,18 +154,22 @@ pub async fn process(c5412pins_ref: &'static mut C5412Pins,
         c5412pins_ref.digit_on(((x/10)%10) as u8);
         when += ON_TIME_MS;
         Timer::at(Instant::from_millis(when)).await;
+        if Instant::now().as_millis() > when { overrun += 1; }
         c5412pins_ref.all_off();
         when += OFF_TIME_MS;
         Timer::at(Instant::from_millis(when)).await;
+        if Instant::now().as_millis() > when { overrun += 1; }
 
         // Cathode 2: The 1's digit
         c5412pins_ref.common_2_on();
         c5412pins_ref.digit_on((x%10) as u8);
         when += ON_TIME_MS;
         Timer::at(Instant::from_millis(when)).await;
+        if Instant::now().as_millis() > when { overrun += 1; }
         c5412pins_ref.all_off();
         when += OFF_TIME_MS;
         Timer::at(Instant::from_millis(when)).await;
+        if Instant::now().as_millis() > when { overrun += 1; }
 
         count+=1;
     }
@@ -170,3 +177,5 @@ pub async fn process(c5412pins_ref: &'static mut C5412Pins,
 
 // Thread safe: Get number of display refreshes since boot
 pub fn get_count() -> u32 { COUNT_ATOMIC.load(Ordering::Relaxed) }
+
+pub fn get_overrun() -> u32 { OVERRUN_ATOMIC.load(Ordering::Relaxed) }
