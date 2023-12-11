@@ -13,12 +13,37 @@ use embassy_stm32::gpio::Level::{High,Low};
 
 use {defmt_rtt as _, panic_probe as _};
 
-use embassy_sync::signal::Signal;
+use embassy_sync::channel::Channel;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use static_cell::StaticCell;
 use heapless::String;
 use core::sync::atomic::Ordering;
 use core::sync::atomic::AtomicU32;
+
+use time_stats::TimeStats;
+use stats::Stats;
+
+//
+// Debug configuration
+//
+#[allow(dead_code)]
+#[derive(PartialEq, Eq)]
+enum HrDebugMode {
+    Info, // Show difference bewteen adc and process_hr counts
+    Debug, // Show that adc, now.as_millis and process_hr are all in lockstep
+    Stats, // Show lots of stuff including min/mean/max time in hr task
+    DisplayOverrun, // Show display task overrun counter
+}
+#[allow(dead_code)]
+#[derive(PartialEq, Eq)]
+enum DebugMode {
+    None,
+    Hr(HrDebugMode),
+    DumpSamples, // Display raw samples
+    DumpTiming, // Display time spent in ADC and process_hr task
+}
+
+const DEBUG_MODE : DebugMode = DebugMode::Hr(HrDebugMode::DisplayOverrun);
 
 //
 // Things needed for 14-segment driver processing task
@@ -26,10 +51,10 @@ use core::sync::atomic::AtomicU32;
 
 mod c5412;
 
+static C5412PINS_INST: StaticCell<c5412::C5412Pins> = StaticCell::new();
+
 // Async communication: value to display, 0-99, to c5412 task
 static DISP_VALUE_ATOMIC: AtomicU32 = AtomicU32::new(0);
-
-static C5412PINS_INST: StaticCell<c5412::C5412Pins> = StaticCell::new();
 
 //
 // Things needed for HR processing task
@@ -37,8 +62,16 @@ static C5412PINS_INST: StaticCell<c5412::C5412Pins> = StaticCell::new();
 
 mod hr_alg3;
 
+// Async communication: ADC overrun detection.  Expect ADC_N == elapsed millis
+static ADC_N_ATOMIC: AtomicU32 = AtomicU32::new(0);
+
 // Async communication: ADC value from main (ADC) task to HR processing task
-static SAMPLE_SIGNAL: Signal<CriticalSectionRawMutex, u32> = Signal::new();
+// Worst case seen was 150ms delay during one version of HR processing,
+// so sized channel to be somewhat larger, at 1kHz sample rate.
+// Note that if sending to the channel overruns, the ADC task will panic, so
+// it should be easyish to tune this value.
+static SAMPLE_CHANNEL: Channel<CriticalSectionRawMutex, u32, 200> =
+    Channel::new();
 
 //
 // Gymnastics to pass peripherals into tasks.
@@ -59,8 +92,6 @@ static LED3_INST: StaticCell<LED3> = StaticCell::new();
 type BUTTON1 = embassy_stm32::gpio::Input<'static, embassy_stm32::peripherals::PC13>;
 static BUTTON1_INST: StaticCell<BUTTON1> = StaticCell::new();
 
-const DUMP_MODE: bool = true;
-
 // Heartrate computation task
 // Simply call hr::tick(sample) and output something based on results
 #[embassy_executor::task]
@@ -70,53 +101,98 @@ async fn process_hr(uart_ref: &'static mut UART,
                     button1_ref: &'static mut BUTTON1,
                     display_value_atomic: &'static AtomicU32)
 {
-    let mut msg : String<64> = String::new();
+    let mut msg : String<128> = String::new();
     msg.clear();
     core::fmt::write(&mut msg, format_args!("Boot\n")).unwrap();
     _ = (uart_ref).write(msg.as_bytes()).await;
     let mut hr = hr_alg3::Hr::new();
-    let mut n0 = 0usize;
     let mut count0 = 0u32;
+    let mut proc_n0 = 0usize;
+    let mut adc_n0 = ADC_N_ATOMIC.load(Ordering::Relaxed);
+    let mut now0 = Instant::now().as_micros();
+    let mut ts = TimeStats::new();
+    let mut s = Stats::new();
+    ts.loop_tick();
     loop {
-        let sample = SAMPLE_SIGNAL.wait().await;
+        let sample = SAMPLE_CHANNEL.receive().await;
+        ts.loop_tick();
+        let now = Instant::now().as_micros();
+        let adc_n = ADC_N_ATOMIC.load(Ordering::Relaxed);
         let lp = button1_ref.get_level() == Level::Low;
+        let count = c5412::get_count();
         led3_ref.set_level(if !lp { High } else { Low });
-        let (n, cooked_sample, _peak, state, hr_update) = hr.tick(lp, sample);
+        let (proc_n, cooked_sample, state, hr_update) = hr.tick(lp, sample);
         // If we got a heartrate update, reflect it on LED
         if hr_update != 0 {
             display_value_atomic.store(hr.hr() as u32, Ordering::Relaxed);
         }
         led1_ref.set_level(if state != 0 { High } else { Low });
-        if DUMP_MODE {
-            msg.clear();
-            // core::fmt::write(&mut msg, format_args!("{} {}\n",  sample, state+peak)).unwrap();
-            core::fmt::write(&mut msg, format_args!("{} {}\n",  cooked_sample, if lp {1} else {0})).unwrap();
-            // core::fmt::write(&mut msg, format_args!("{}\n",  sample)).unwrap();
-            _ = (uart_ref).write(msg.as_bytes()).await;
-            // NOTE: we restart loop early here to avoid other UART output!
-            continue;
-        }
-        // If we got a heartrate update, reflect it on UART console
-        if hr_update != 0 {
-            let rate = hr.hr();
-            let (a, b) = hr.above_below(); // FIXME: This is a slow operation
-            let d = a-b;
-            let count = c5412::get_count();
-            let refresh = 1000f64 * (count-count0) as f64 / (n-n0) as f64;
-            msg.clear();
-            core::fmt::write(&mut msg, format_args!("{} {} rate={:.2} refresh={:.2}\n",
-                                                    n-n0, d, rate, refresh)).unwrap();
-            _ = (uart_ref).write(msg.as_bytes()).await;
-            count0 = count;
-            n0 = n;
+        match DEBUG_MODE {
+            DebugMode::DumpTiming => {
+                let dadc_n = adc_n-adc_n0;
+                let dnow = now-now0;
+                msg.clear();
+                core::fmt::write(&mut msg, format_args!("{} {}\n",  dadc_n, dnow)).unwrap();
+                _ = (uart_ref).write(msg.as_bytes()).await;
+                adc_n0 = adc_n;
+                now0 = now;
+                // NOTE: we restart loop early here to avoid other UART output!
+                continue;
+            }
+            DebugMode::DumpSamples => {
+                msg.clear();
+                core::fmt::write(&mut msg, format_args!("{} {}\n",  cooked_sample, if lp {1} else {0})).unwrap();
+                _ = (uart_ref).write(msg.as_bytes()).await;
+                // NOTE: we restart loop early here to avoid other UART output!
+                continue;
+            }
+            DebugMode::Hr(m) => {
+                // If we got a heartrate update, reflect it on UART console
+                if hr_update != 0 {
+                    let rate = hr.hr();
+                    let dcount = count-count0;
+                    let dproc_n = proc_n-proc_n0;
+                    let dadc_n = adc_n-adc_n0;
+                    let dnow = now-now0;
+                    let refresh = 1000000f64 * dcount as f64 / dnow as f64;
+                    msg.clear();
+                    match m {
+                        HrDebugMode::Stats => {
+                            ts.stats(&mut s);
+                            core::fmt::write(&mut msg, format_args!("rate={:.2} refresh={:.2} dcount={} dproc={} dadc={} dnow={} n:{} {:.2}/{:.1}/{:.2} {:.2}\n",
+                                                                    rate, refresh, dcount, dproc_n, dadc_n, dnow,
+                                                                    s.n(), s.min(), s.mean(), s.max(), s.std())).unwrap();
+                            ts.reset();
+                        }
+                        HrDebugMode::Debug => {
+                            core::fmt::write(&mut msg, format_args!("rate={:.2} refresh={:.2} dcount={} dproc={} dadc={} dnow={}\n",
+                                                                    rate, refresh, dcount, dproc_n, dadc_n, dnow)).unwrap();
+                        }
+                        HrDebugMode::Info => {
+                            let err = dadc_n as i32 - dproc_n as i32;
+                            core::fmt::write(&mut msg, format_args!("{:.2} {:.2} {}\n", rate, refresh, err)).unwrap();
+                        }
+                        HrDebugMode::DisplayOverrun => {
+                            let overrun = c5412::get_overrun();
+                            core::fmt::write(&mut msg, format_args!("{:.2} {:.2} {}\n", rate, refresh, overrun)).unwrap();
+                        }
+                    }
+                    _ = (uart_ref).write(msg.as_bytes()).await;
+                    count0 = count;
+                    adc_n0 = adc_n;
+                    proc_n0 = proc_n;
+                    now0 = now;
+                }
+            }
+            DebugMode::None => {}
         }
         // Put some feedback on the console if no pulse for 3 seconds
-        if n-n0 > 3000 {
+        if proc_n-proc_n0 > 3000 {
             let (dc, thresh) = hr.help();
             msg.clear();
             core::fmt::write(&mut msg, format_args!("Help: {} {}\n",  dc, thresh)).unwrap();
             _ = uart_ref.write(msg.as_bytes()).await;
-            n0 = n;
+            proc_n0 = proc_n;
         }
     }
 }
@@ -192,8 +268,9 @@ async fn main(spawner: Spawner) {
     let mut now = Instant::now().as_millis();
     loop {
         now += 1; // Sample at 1kHz -- Using "tick-hz-1_000_000" feature of embassy-time
+        ADC_N_ATOMIC.store(now as u32, Ordering::Relaxed);
         Timer::at(Instant::from_millis(now)).await;
         let sample = adc.read(&mut p.PA0) as u32;
-        SAMPLE_SIGNAL.signal(sample);
+        SAMPLE_CHANNEL.try_send(sample).expect("adc sample channel overrun");
     }
 }

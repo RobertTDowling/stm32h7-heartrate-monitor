@@ -11,7 +11,6 @@ const THRESHOLD_ALPHA_DN: f64 = 1.0/2000.0;
 const PEAK_DELAY: usize = 200;
 
 const ABOVE_SIZE: usize = 200;
-const BELOW_SIZE: usize = 200;
 
 pub struct Hr {
     dc_ema: f64, // DC filter
@@ -20,10 +19,7 @@ pub struct Hr {
     n : usize, // Monotonic counter of calls to `tick`
     state : u8,
     timer : usize,
-    peak_flag : u8,
-    wild_flag : u8,
     above_pts : ConstGenericRingBuffer<i32, ABOVE_SIZE>,
-    below_pts : ConstGenericRingBuffer<i32, BELOW_SIZE>,
 
     last_peak_n : usize,
     hr : f64,
@@ -39,10 +35,7 @@ impl Hr {
             n : 0usize,
             state : 0u8,
             timer : 0usize,
-            peak_flag : 0u8,
-            wild_flag : 0u8,
             above_pts : ConstGenericRingBuffer::<i32, ABOVE_SIZE>::new(),
-            below_pts : ConstGenericRingBuffer::<i32, BELOW_SIZE>::new(),
             last_peak_n : 0usize,
             hr : 0f64,
         }
@@ -53,14 +46,11 @@ impl Hr {
     //    lp: Low pass input if true
     //    raw_sample: value to process
     // Return tuple:
-    //    tick count: number of times we were called
+    //    tick count: number of times we were called since boot
     //    filtered input: either raw_sample or a low-pass version of it
-    //    peak_flag: 1 if (the start of) a peak was detected on this tick
     //    state: 1 if collecting peaks samples, 0 if not
     //    hr_update_flag: 1 if heartrate value was updated this tick
-    pub fn tick(&mut self, lp: bool, raw_sample: u32) -> (usize, u32, u8, u8, u8) {
-        self.peak_flag = 0;
-        self.wild_flag = 0;
+    pub fn tick(&mut self, lp: bool, raw_sample: u32) -> (usize, u32, u8, u8) {
         let mut hr_update_flag : u8 = 0;
 
         let fx = raw_sample as f64;
@@ -82,7 +72,6 @@ impl Hr {
                 if self.state == 0 && self.timer >= PEAK_DELAY {
                     self.state = 1;
                     self.timer = 0;
-                    self.peak_flag = 1;
                 }
             } else {
                 self.threshold_ema += (fx - self.threshold_ema) * THRESHOLD_ALPHA_DN;
@@ -93,21 +82,19 @@ impl Hr {
                     self.timer = 0;
                 }
             }
-            if self.state == 0 {
-                self.below_pts.push(x as i32 - self.threshold_ema as i32);
-            } else {
+            if self.state == 1 {
                 self.above_pts.push(x as i32 - self.threshold_ema as i32);
             }
         } else {
+            // Crazy value, reset state machine
             self.state = 0;
             self.timer = 0;
-            self.wild_flag = 1;
         }
         self.n += 1;
         self.timer += 1;
 
-        // Return Tick count, filtered input, peak_flag, state, hr_update_flag
-        (self.n, x, self.peak_flag, self.state, hr_update_flag)
+        // Return Tick count, filtered input, state, hr_update_flag
+        (self.n, x, self.state, hr_update_flag)
     }
     // Called internally when exiting state 1, that is, after the peak data has been
     //   collected.  Process it to find the max, and then the inter-peak distance
@@ -118,7 +105,9 @@ impl Hr {
         if self.above_pts.capacity() > 1 {
             let mut above_max = 0i32;
             let mut above_ix = 0usize;
+            // This is slow when not --release, and after_ticks is the problem
             for (i, val) in self.above_pts.iter().enumerate() {
+                // Timer::after_ticks(0).await; // yield
                 if above_max < *val {
                     above_max = *val;
                     above_ix = i;
@@ -139,30 +128,6 @@ impl Hr {
     }
     // Return most recent heartrate result
     pub fn hr(&self) -> f64 { self.hr }
-    // Compute max of peak samples and min of non-peak samples
-    //   Takes 140us currently
-    // Return a tuple with the (max, min) or essentially the range of the signal
-    pub fn above_below(&self) -> (i32, i32) {
-        let mut above = 0i32;
-        if self.above_pts.capacity() > 1 {
-            let i = self.above_pts.iter();
-            for ii in i {
-                if above < *ii {
-                    above = *ii;
-                }
-            }
-        }
-        let mut below = 0i32;
-        if self.below_pts.capacity() > 1 {
-            let i = self.below_pts.iter();
-            for ii in i {
-                if below > *ii {
-                    below = *ii;
-                }
-            }
-        }
-        (above, below)
-    }
     // Return some internal values for debugging
     pub fn help(&self) -> (u32, u32) {
         (self.dc_ema as u32, self.threshold_ema as u32)
