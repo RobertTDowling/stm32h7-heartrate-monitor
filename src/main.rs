@@ -66,6 +66,10 @@ mod hr_alg3;
 static ADC_N_ATOMIC: AtomicU32 = AtomicU32::new(0);
 
 // Async communication: ADC value from main (ADC) task to HR processing task
+// Worst case seen was 150ms delay during one version of HR processing,
+// so sized channel to be somewhat larger, at 1kHz sample rate.
+// Note that if sending to the channel overruns, the ADC task will panic, so
+// it should be easyish to tune this value.
 static SAMPLE_CHANNEL: Channel<CriticalSectionRawMutex, u32, 200> =
     Channel::new();
 
@@ -117,7 +121,7 @@ async fn process_hr(uart_ref: &'static mut UART,
         let lp = button1_ref.get_level() == Level::Low;
         let count = c5412::get_count();
         led3_ref.set_level(if !lp { High } else { Low });
-        let (proc_n, cooked_sample, _peak, state, hr_update) = hr.tick(lp, sample).await;
+        let (proc_n, cooked_sample, state, hr_update) = hr.tick(lp, sample);
         // If we got a heartrate update, reflect it on LED
         if hr_update != 0 {
             display_value_atomic.store(hr.hr() as u32, Ordering::Relaxed);
@@ -267,6 +271,6 @@ async fn main(spawner: Spawner) {
         ADC_N_ATOMIC.store(now as u32, Ordering::Relaxed);
         Timer::at(Instant::from_millis(now)).await;
         let sample = adc.read(&mut p.PA0) as u32;
-        SAMPLE_CHANNEL.try_send(sample).expect("overrun");
+        SAMPLE_CHANNEL.try_send(sample).expect("adc sample channel overrun");
     }
 }
