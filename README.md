@@ -10,3 +10,6 @@
   * Ganged cathode drivers for increased current capacity when multiple segments lit at once
   * Bit-banged software PWM to limit long-term current
 * Noise filtering and pulse wave peak detection in real-time
+
+
+![HeartRate 3 Algorithm Block Diagram](/doc/HeartRateAlg3.png)
