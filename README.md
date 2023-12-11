@@ -27,14 +27,14 @@ For a stand-alone CubeMX data acquisition
 For a well supported Rust embedded platform:
     * [NUCLEO-H743ZI2](https://www.mouser.com/ProductDetail/511-NUCLEO-H743ZI2) dev kit with USB power and built in FTDI and ST-Link, $27 (mouser)
     * Surplus 7-segment Common Cathode LED display
+
+![HR FW Task Diagram](/doc/HR%20FW%20Architecture.png)
+
 * FW Architecture
   * Cooperative multitasking with quasi-real-time requirement in sampling and display tasks
     * ADC sampling task ticks at 1kHz. Ideally a very precise 1kHz for signal processing reasons
     * Display task needs to tick overall at >50Hz to avoid flicker. Variations of or off periods will appear as visual glitches or brighter or darker digits
     * HR task takes up the background processing slack, but at this time, only the UART I/O and sample channel operate async. Ideally, the processing would also have scheduler yields embedded in it, but without compiler optimization, they noticeably degrade the performance of the display task, so they were removed.  Something to revisit and explain!
-
-![HR FW Task Diagram](/doc/HR%20FW%20Architecture.png)
-
   * Reading the ADC
     * Simply sample ADC at a regular rate and place output in Channel queue for processing later
     * ADC configured to minimize noise
@@ -42,15 +42,9 @@ For a well supported Rust embedded platform:
       * Changes to ADC Sample/Hold did not seem to have any effect on noise, so lowered ADC clock rate instead and found sweet spot at about 1/10th the default sample rate
       * ADC sampling takes about 50us in this mode, far less than 1kHz overall sample rate.
     * Size of channel determined empirically by watching amount of overruns with various processing and I/O loads during algorithm development
-  * Algorithm for Finding the Pulse
-    * Background Noise
-      * Low Pass Filter
-    * Sensor Motion Noise
-      * DC Estimate and Crazy Filter
-    * Isolating the Peak Region
-      * Above/Below State Machine and Asymmetric Filter
-    * Finding the Peak in the Peak Region
-    * Heart Rate
+  * Task for processing samples
+    * This is the only task with access to the UART, so some strange things are done like messaging metrics out of the display task so they can be logged here.
+    * The processing is considered "background" since it only has to do minimal processing at the sample rate, and longer processing is done at the heart beat rate, about 1/1000 of the sample rate.
   * Driving the Display
     * All LED inputs are driven directly from MCU GPIO output pins, which have an assumed lowish current limit of approximately 20mA (FIXME: Check this)
     * Each segment is driven by 1 dedicated output GPIO; each cathode is driven by 8 dedicated output GPIOs to distribute the load
@@ -59,6 +53,18 @@ For a well supported Rust embedded platform:
       * Can drive 7 segments at once, but only 1 digit at a time due to common cathode
       * Drive segments for 2ms on, 5ms off, for an overall refresh of 2*(2+5)=14ms, or 71.4Hz
         * More brightness can be achieved by shifting some off-time into on-time, but don't make the overall loop time be >20ms to avoid flickering.
+
+![HeartRate 3 Algorithm Block Diagram](/doc/Heart%20Rate%20Alg%203.png)
+
+* Algorithm for Finding the Pulse
+  * Background Noise
+    * Low Pass Filter
+  * Sensor Motion Noise
+    * DC Estimate and Crazy Filter
+  * Isolating the Peak Region
+    * Above/Below State Machine and Asymmetric Filter
+  * Finding the Peak in the Peak Region
+  * Heart Rate
 
 * Development Story
   * First Steps
@@ -73,8 +79,4 @@ For a well supported Rust embedded platform:
 
 * Rust + Embassy Specific Development Issues
   * Balancing Cooperative Multitasking
-
-
-![HeartRate 3 Algorithm Block Diagram](/doc/Heart%20Rate%20Alg%203.png)
-
-
+  * Peripheral Ownership Amongst Tasks
