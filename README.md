@@ -26,9 +26,12 @@ For a stand-alone CubeMX data acquisition
     * [NUCLEO-L073RZ](https://www.mouser.com/ProductDetail/STMicroelectronics/NUCLEO-L073RZ) dev kit with USB power and built in FTDI and ST-Link, $14 (mouser)
 For a well supported Rust embedded platform:
     * [NUCLEO-H743ZI2](https://www.mouser.com/ProductDetail/511-NUCLEO-H743ZI2) dev kit with USB power and built in FTDI and ST-Link, $27 (mouser)
-    * Surplus 7-segment Common Cathode LED display 
+    * Surplus 7-segment Common Cathode LED display
 * FW Architecture
-  * Cooperative multitasking with quasi-real-time requirement in display task
+  * Cooperative multitasking with quasi-real-time requirement in sampling and display tasks
+    * ADC sampling task ticks at 1kHz. Ideally a very precise 1kHz for signal processing reasons
+    * Display task needs to tick overall at >50Hz to avoid flicker. Variations of or off periods will appear as visual glitches or brighter or darker digits
+    * HR task takes up the background processing slack, but at this time, only the UART I/O and sample channel operate async. Ideally, the processing would also have scheduler yields embedded in it, but without compiler optimization, they noticeably degrade the performance of the display task, so they were removed.  Something to revisit and explain!
 
 ![HR FW Task Diagram](/doc/HR%20FW%20Architecture.png)
 
