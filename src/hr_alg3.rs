@@ -12,7 +12,6 @@ const THRESHOLD_ALPHA_DN: f64 = 1.0/2000.0;
 const PEAK_DELAY: usize = 200;
 
 const ABOVE_SIZE: usize = 200;
-const BELOW_SIZE: usize = 200;
 
 pub struct Hr {
     dc_ema: f64, // DC filter
@@ -24,7 +23,6 @@ pub struct Hr {
     peak_flag : u8,
     wild_flag : u8,
     above_pts : ConstGenericRingBuffer<i32, ABOVE_SIZE>,
-    below_pts : ConstGenericRingBuffer<i32, BELOW_SIZE>,
 
     last_peak_n : usize,
     hr : f64,
@@ -43,7 +41,6 @@ impl Hr {
             peak_flag : 0u8,
             wild_flag : 0u8,
             above_pts : ConstGenericRingBuffer::<i32, ABOVE_SIZE>::new(),
-            below_pts : ConstGenericRingBuffer::<i32, BELOW_SIZE>::new(),
             last_peak_n : 0usize,
             hr : 0f64,
         }
@@ -94,9 +91,7 @@ impl Hr {
                     self.timer = 0;
                 }
             }
-            if self.state == 0 {
-                self.below_pts.push(x as i32 - self.threshold_ema as i32);
-            } else {
+            if self.state == 1 {
                 self.above_pts.push(x as i32 - self.threshold_ema as i32);
             }
         } else {
@@ -119,7 +114,7 @@ impl Hr {
         if self.above_pts.capacity() > 1 {
             let mut above_max = 0i32;
             let mut above_ix = 0usize;
-            /* This is slow when not --release, and it seems after_ticks is the problem */
+            // This is slow when not --release, and after_ticks is the problem
             for (i, val) in self.above_pts.iter().enumerate() {
                 // Timer::after_ticks(0).await; // yield
                 if above_max < *val {
@@ -142,32 +137,6 @@ impl Hr {
     }
     // Return most recent heartrate result
     pub fn hr(&self) -> f64 { self.hr }
-    // Compute max of peak samples and min of non-peak samples
-    //   Takes 140us currently
-    // Return a tuple with the (max, min) or essentially the range of the signal
-    pub async fn above_below(&self) -> (i32, i32) {
-        let mut above = 0i32;
-        if self.above_pts.capacity() > 1 {
-            let i = self.above_pts.iter();
-            for ii in i {
-                Timer::after_ticks(0).await; // yield
-                if above < *ii {
-                    above = *ii;
-                }
-            }
-        }
-        let mut below = 0i32;
-        if self.below_pts.capacity() > 1 {
-            let i = self.below_pts.iter();
-            for ii in i {
-                Timer::after_ticks(0).await; // yield
-                if below > *ii {
-                    below = *ii;
-                }
-            }
-        }
-        (above, below)
-    }
     // Return some internal values for debugging
     pub fn help(&self) -> (u32, u32) {
         (self.dc_ema as u32, self.threshold_ema as u32)

@@ -142,8 +142,6 @@ async fn process_hr(uart_ref: &'static mut UART,
                 // If we got a heartrate update, reflect it on UART console
                 if hr_update != 0 {
                     let rate = hr.hr();
-                    // let (a, b) = hr.above_below().await; // This is a slow operation // FIXME remove this and retime
-                    // let _range = a-b;
                     let dcount = count-count0;
                     let dproc_n = proc_n-proc_n0;
                     let dadc_n = adc_n-adc_n0;
