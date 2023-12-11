@@ -25,5 +25,5 @@ libm = "0.2.8"
 heapless = { version = "0.8", default-features = false }
 ringbuffer = { version = "0.15", default-features = false } # no_std
 
-stats = { path="../stats" }
-time_stats = { path="../time-stats" }
+stats = { path="stats" }
+time_stats = { path="time_stats" }
