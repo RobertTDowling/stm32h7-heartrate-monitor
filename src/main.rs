@@ -26,19 +26,21 @@ use stats::Stats;
 //
 // Debug configuration
 //
+#[allow(dead_code)]
 #[derive(PartialEq, Eq)]
 enum HrDebugMode {
-    Info,
-    Debug,
-    Stats,
-    DisplayOverrun,
+    Info, // Show difference bewteen adc and process_hr counts
+    Debug, // Show that adc, now.as_millis and process_hr are all in lockstep
+    Stats, // Show lots of stuff including min/mean/max time in hr task
+    DisplayOverrun, // Show display task overrun counter
 }
+#[allow(dead_code)]
 #[derive(PartialEq, Eq)]
 enum DebugMode {
     None,
     Hr(HrDebugMode),
-    DumpSamples,
-    DumpTiming,
+    DumpSamples, // Display raw samples
+    DumpTiming, // Display time spent in ADC and process_hr task
 }
 
 const DEBUG_MODE : DebugMode = DebugMode::Hr(HrDebugMode::DisplayOverrun);
@@ -49,17 +51,19 @@ const DEBUG_MODE : DebugMode = DebugMode::Hr(HrDebugMode::DisplayOverrun);
 
 mod c5412;
 
+static C5412PINS_INST: StaticCell<c5412::C5412Pins> = StaticCell::new();
+
 // Async communication: value to display, 0-99, to c5412 task
 static DISP_VALUE_ATOMIC: AtomicU32 = AtomicU32::new(0);
-static ADC_N_ATOMIC: AtomicU32 = AtomicU32::new(0);
-
-static C5412PINS_INST: StaticCell<c5412::C5412Pins> = StaticCell::new();
 
 //
 // Things needed for HR processing task
 //
 
 mod hr_alg3;
+
+// Async communication: ADC overrun detection.  Expect ADC_N == elapsed millis
+static ADC_N_ATOMIC: AtomicU32 = AtomicU32::new(0);
 
 // Async communication: ADC value from main (ADC) task to HR processing task
 static SAMPLE_CHANNEL: Channel<CriticalSectionRawMutex, u32, 200> =
@@ -146,7 +150,6 @@ async fn process_hr(uart_ref: &'static mut UART,
                     let dproc_n = proc_n-proc_n0;
                     let dadc_n = adc_n-adc_n0;
                     let dnow = now-now0;
-                    let refresh = 1000f64 * dcount as f64 / dadc_n as f64;
                     let refresh = 1000000f64 * dcount as f64 / dnow as f64;
                     msg.clear();
                     match m {

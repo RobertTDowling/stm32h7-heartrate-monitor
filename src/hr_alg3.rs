@@ -1,6 +1,5 @@
 // hr_alg3: Heartrate Algorithm #3, including processing task
 
-use embassy_time::Timer;
 use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
 
 const CRAZY_HI: i32 =3000;
