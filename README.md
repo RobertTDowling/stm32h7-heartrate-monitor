@@ -35,6 +35,31 @@ For a well supported Rust embedded platform:
 
 ![HR FW Task Diagram](/doc/HR%20FW%20Architecture.png)
 
+  * Reading the ADC
+    * Simply sample ADC at a regular rate and place output in Channel queue for processing later
+    * ADC configured to minimize noise
+      * 16x oversampling enabled (with `unsafe` raw point: FIXME, use `stm-metapac`) with no down-shift on 12 bit conversion to result in 16 bit samples
+      * Changes to ADC Sample/Hold did not seem to have any effect on noise, so lowered ADC clock rate instead and found sweet spot at about 1/10th the default sample rate
+      * ADC sampling takes about 50us in this mode, far less than 1kHz overall sample rate.
+    * Size of channel determined empirically by watching amount of overruns with various processing and I/O loads during algorithm development
+  * Algorithm for Finding the Pulse
+    * Background Noise
+      * Low Pass Filter
+    * Sensor Motion Noise
+      * DC Estimate and Crazy Filter
+    * Isolating the Peak Region
+      * Above/Below State Machine and Asymmetric Filter
+    * Finding the Peak in the Peak Region
+    * Heart Rate
+  * Driving the Display
+    * All LED inputs are driven directly from MCU GPIO output pins, which have an assumed lowish current limit of approximately 20mA (FIXME: Check this)
+    * Each segment is driven by 1 dedicated output GPIO; each cathode is driven by 8 dedicated output GPIOs to distribute the load
+    * Display is PWM'd to avoid frying the device
+    * Overall refresh rate must exceed visual detection, >50Hz
+      * Can drive 7 segments at once, but only 1 digit at a time due to common cathode
+      * Drive segments for 2ms on, 5ms off, for an overall refresh of 2*(2+5)=14ms, or 71.4Hz
+        * More brightness can be achieved by shifting some off-time into on-time, but don't make the overall loop time be >20ms to avoid flickering.
+
 * Development Story
   * First Steps
     * Original goal was measuring breathing to support mindfulness
@@ -45,15 +70,7 @@ For a well supported Rust embedded platform:
     * Sampling Rate
   * Confounding Problems
   * More on Data Acquisition
-* Algorithm for Finding the Pulse
-  * Background Noise
-    * Low Pass Filter
-  * Sensor Motion Noise
-    * DC Estimate and Crazy Filter
-  * Isolating the Peak Region
-    * Above/Below State Machine and Asymmetric Filter
-  * Finding the Peak in the Peak Region
-  * Heart Rate
+
 * Rust + Embassy Specific Development Issues
   * Balancing Cooperative Multitasking
 
