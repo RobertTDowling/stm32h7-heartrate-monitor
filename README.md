@@ -100,7 +100,8 @@ One of the sensor vendors posted a short Arduino sketch to exercise the device. 
 
 I wrote a very cheap loop in C using [ST’s CubeMX](https://www.st.com/en/development-tools/stm32cubemx.html) generated HAL to read the ADC at 50Hz or 1kHz and printf the raw value on the UART. Most Nucleo boards conveniently provide a built-in FTDI, so from the PC, I could log the data using PuTTY and start looking at it in Octave.
 
-* Manual captures were made with [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html) and analyzed in [Octave](https://octave.org/) (Matlab)
+> [!NOTE]
+> Manual captures were made with [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html) and analyzed in [Octave](https://octave.org/) (Matlab)
 
 The data didn’t look bad--once I got a signal--but it took a lot of fussing to actually get a signal. The biggest problem was that if you didn't hold the sensor just right, it picked up nothing.
 
@@ -314,10 +315,20 @@ How do we determine when the pulse ends?
 
 Because the asymmetric EMA cuts through the pulse wave higher on the right than on the left, it didn’t make sense to use the same technique to find the end of the pulse. It would cut off too much of the pulse, and we’d have less data to work with. If we decided to do curve fitting, for example, less data would mean a less accurate fit, or one more subject to noise. In fact, that downward crossing comes long before the expected 200ms width. I punted here and declared the pulse ended exactly 200ms after it starts. Depending on how late we start, we might pick up some non-peak data at the end.  The peak detector would have to deal with that.
 
-## The hair plots
+## The Hair Plots
+
+The hair plots show a collection of peak regions from real data. They show the 200ms of peak data in red, with an extra 50ms on either side in blue for context. When the peaks are all superimposed on each other, the 200ms data distributes roughly evenly on both sides of the peak. In some cases, horrible things happen, but mostly it works well. Changing the end point to 150ms after the start would probably make them all lopsided.
 
 ![graphic5a-hairplots.png](/doc/graphic5a-hairplots.png)
 
 ## Determining the peak within the region
 
 ![graphic6.png](/doc/graphic6.png)
+
+Peak finding is an art. Octave uses this trick:
+
+* Fit a quadratic polynomial and find its maximum
+
+Experimentally the 200ms region does not fit a parabola well, and doing so almost always moves the peak dozens of samples to the right. I know people say not to fit to higher order polynomials, but a 3rd order fits better and a 5th order fit very well.
+
+But the current implementation does not do any curve fitting. Since the data is low passed, it is fairly smooth, so it simply searches for the maximum. (FIXME: this probably should be changed, since the heart rate seems to fluctuate a fair amount currently, more than I think it does physiologically. Misplacing the peak will have a direct impact on the heart rate calculation.)
