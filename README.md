@@ -143,25 +143,36 @@ skyrocketed.
 
 A low-pass filter is a simple fist step to removing the background noise that would otherwise make peak finding impossible.
 
-All the low-pass filters used in this project are based on the [Exponential
-Moving Average](https://en.wikipedia.org/wiki/Exponential_smoothing) (EMA)
-which is very easy to compute and more or less intuitive. The EMA is sort of a
-degenerate IIR filter that models an [RC charge/discharge
-curve](https://en.wikipedia.org/wiki/RC_filter), with an exponential decay set
-by a single parameter α.
-
-For $0<\alpha<1$, small:
-$y_n=(1-\alpha)y_{n-1} + x_n$ // y = (1-a)*y + a*x  ..or..  y += a*(x-y)
-Let $T=1/\alpha$.
-Factoids
-* After T samples, the output will have converged 63.2% (or 1-exp(-1)) to the input.
-* Rule of thumb: 5T gets you within ½% of the final value, as exp(-5) = 0.0067.
-* Any given input sample will “spend” T samples worth of time in the filter when all the fractions multiplied by their age are added up.
-* The cutoff frequency of the EMA filter is (for small α)
-* FC= radians/sample
-* FC=SampleRate/2 Hz
-* As a period, this is 2T samples
-* A sine wave at the cutoff frequency will be attenuated to ½ power, which is $sqrt{1/2}= 0.707$ amplitude
+> [!TIP]
+> All the low-pass filters used in this project are based on the [Exponential Moving Average](https://en.wikipedia.org/wiki/Exponential_smoothing) (EMA)
+> which is very easy to compute and more or less intuitive. The EMA is sort of a
+> degenerate IIR filter that models an [RC charge/discharge curve](https://en.wikipedia.org/wiki/RC_filter), with an exponential decay set
+> by a single parameter α.
+> 
+> For $0<\alpha<1$, small:
+>
+> $$y_n=(1-\alpha)y_{n-1} + x_n$$
+> 
+> This can be coded up
+> 
+> ```y = (1-a)*y + a*x```
+> 
+> or
+> 
+> ```y += a*(x-y)```
+> 
+> ### EMA Factoids
+> 
+> $\textrm{Let }T=1/\alpha$
+> 
+> * After T samples, the output will have converged 63.2% (or $1-e^{-1}$) to the input
+> * Rule of thumb: 5T gets you within ½% of the final value, since exp(-5) = 0.0067
+> * Any given input sample will “spend” T samples worth of time in the filter when all the fractions multiplied by their age are added up
+> * The cutoff frequency (FC) of the EMA filter is (for small $\alpha$)
+>   * FC=radians/sample
+>   * FC=SampleRate/2 Hz
+>   * As a period, this is 2T samples
+> * A sine wave at the cutoff frequency will be attenuated to half power, which is $\sqrt{1/2}= 0.707$ amplitude
 
 Empirically, an EMA with α=1/100 (FC=1.6Hz) when sampling at 1kHz does a good
 job of rejecting 50/60Hz and other electrical noise while leaving the
