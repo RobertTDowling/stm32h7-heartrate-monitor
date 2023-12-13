@@ -80,3 +80,18 @@ For a well supported Rust embedded platform:
 * Rust + Embassy Specific Development Issues
   * Balancing Cooperative Multitasking
   * Peripheral Ownership Amongst Tasks
+
+![gallery-over-lowpass.png](/doc/gallery-over-lowpass.png)
+![gallery-over.png](/doc/gallery-over.png)
+![graphic0a.png](/doc/graphic0a.png)
+![graphic0b.png](/doc/graphic0b.png)
+![graphic0c.png](/doc/graphic0c.png)
+![graphic0d.png](/doc/graphic0d.png)
+![graphic0e.png](/doc/graphic0e.png)
+![graphic1.png](/doc/graphic1.png)
+![graphic3.png](/doc/graphic3.png)
+![graphic3a.png](/doc/graphic3a.png)
+![graphic3aa.png](/doc/graphic3aa.png)
+![graphic4.png](/doc/graphic4.png)
+![graphic5a-hairplots.png](/doc/graphic5a-hairplots.png)
+![graphic6.png](/doc/graphic6.png)
