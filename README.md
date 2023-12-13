@@ -76,18 +76,48 @@ For a well supported Rust embedded platform:
     * Sampling Rate
   * Confounding Problems
   * More on Data Acquisition
-
+  
 * Rust + Embassy Specific Development Issues
   * Balancing Cooperative Multitasking
+    * Yielding to Scheduler
+    * Irony of background task yielding slowing foreground task
   * Peripheral Ownership Amongst Tasks
 
-![gallery-over-lowpass.png](/doc/gallery-over-lowpass.png)
-![gallery-over.png](/doc/gallery-over.png)
+# Development Story
+## First data acquired at 50Hz
+
 ![graphic0a.png](/doc/graphic0a.png)
+
+### Zoom out to show context: 
+* DC drift
+* Sensor Motion Noise
+* Background Noise
+* Amplitude changes
+
 ![graphic0b.png](/doc/graphic0b.png)
+
+### Zoom out further to show relative size of sensor motion artifacts
+
 ![graphic0c.png](/doc/graphic0c.png)
+
+## Comparison of background noise and wave shape when scale is normalized
+
 ![graphic0d.png](/doc/graphic0d.png)
+
+### Zoom up of a single pulse wave
+
 ![graphic0e.png](/doc/graphic0e.png)
+
+## Noisier data from default H743 ADC driver under Rust
+
+![gallery-over.png](/doc/gallery-over.png)
+
+## Same data with Low Pass
+
+![gallery-over-lowpass.png](/doc/gallery-over-lowpass.png)
+
+
+
 ![graphic1.png](/doc/graphic1.png)
 ![graphic3.png](/doc/graphic3.png)
 ![graphic3a.png](/doc/graphic3a.png)
