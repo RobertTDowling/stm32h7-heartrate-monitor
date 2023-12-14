@@ -83,20 +83,27 @@ For a well supported Rust embedded platform:
     * Sizing that buffer
     * Detecting overflow and handling (or not)
 * Passing Parameters to Tasks
-  * Parameter references must have `static` lifetime
-  * Parameters can not be generics
-  * But Embassy STM Peripherals are generics!
+  * Embassy framework requirements
+    * Parameter references must have `static` lifetime
+    * Parameters can not be generics
+    * But Embassy STM Peripherals are generics!
+    * The `type` trick for passing generics into tasks
   * Peripheral Ownership Among Tasks
-    * The `type` trick to passing generics into tasks
     * Needing to share or own Peripherals
-      * Can't have two threads accessing a single peripheral
+      * Can't have two threads accessing a single peripheral at same time
+      * To avoid adding mutex locks, divvied up peripherals between tasks so each has exclusive access
+      * One pain point, the UART used for console logging has to be controlled by one task, and the others had to message any logging they wanted back to that task
 * Balancing Cooperative Multitasking
-  * Yielding to Scheduler
-  * Display driver is highest priority, since it protects the LEDs
-  * ADC task is same or higher priority since it is needs to sample evenly
-  * Processing task is lowest priority and can be considered "background.
+  * Yielding to scheduler above and beyond Embassy's built-in I/O `async` operations when having to perform long computations
+  * Display driver is highest priority, since it protects the LEDs and more importantly, it is performing a software PWM; any changes in the duty cycle will be immediately apparent to the user as flickering brightness
+  * ADC task is close to same priority since it is needs to sample evenly, but it won't be visually apparent if it does slip
+  * Heart Rate Processing task is lowest priority and can be considered "background"
     * Performs some slow operations like peak finding
-    * Irony of background task frequent yielding slowing foreground task
+  * Finding a scheduler `yield` operation: `Timer::after_ticks(0).await`
+  * Discovering that `yield` is a fairly expensive operation when optimization is turned off, with occasional very long delays
+    * Irony that background task frequent yielding actually slowed display foreground task, and best performance resulted from running processing straight through
+
+
 
 # Algorithm Development Story
 
