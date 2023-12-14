@@ -76,10 +76,27 @@ For a well supported Rust embedded platform:
   * Different in time between consecutive peaks -> Heart Rate
 
 ## Rust + Embassy Specific Development Issues
+* General IPC
+  * Atomics to drive display update, since we don't care if we miss a change, we'll pick it up next refresh
+  * Channel to pass data from ADC task to Processing task so we don't lose data
+    * Use of Channel (queue) to buffer periodic slowdown in processing task
+    * Sizing that buffer
+    * Detecting overflow and handling (or not)
+* Passing Parameters to Tasks
+  * Parameter references must have `static` lifetime
+  * Parameters can not be generics
+  * But Embassy STM Peripherals are generics!
+  * Peripheral Ownership Among Tasks
+    * The `type` trick to passing generics into tasks
+    * Needing to share or own Peripherals
+      * Can't have two threads accessing a single peripheral
 * Balancing Cooperative Multitasking
   * Yielding to Scheduler
-  * Irony of background task yielding slowing foreground task
-* Peripheral Ownership Among Tasks
+  * Display driver is highest priority, since it protects the LEDs
+  * ADC task is same or higher priority since it is needs to sample evenly
+  * Processing task is lowest priority and can be considered "background.
+    * Performs some slow operations like peak finding
+    * Irony of background task frequent yielding slowing foreground task
 
 # Algorithm Development Story
 
