@@ -72,6 +72,7 @@ impl Hr {
                 if self.state == 0 && self.timer >= PEAK_DELAY {
                     self.state = 1;
                     self.timer = 0;
+                    self.above_pts.clear();
                 }
             } else {
                 self.threshold_ema += (fx - self.threshold_ema) * THRESHOLD_ALPHA_DN;
@@ -83,7 +84,7 @@ impl Hr {
                 }
             }
             if self.state == 1 {
-                self.above_pts.push(x as i32 - self.threshold_ema as i32);
+                self.above_pts.push(x as i32); // AHA, that is the problem.  That is why it is signed.
             }
         } else {
             // Crazy value, reset state machine
