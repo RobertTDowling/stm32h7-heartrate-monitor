@@ -2,8 +2,8 @@
 
 use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
 
-const CRAZY_HI: i32 =3000;
-const CRAZY_LO: i32 =-1000;
+const CRAZY_HI: u32 =3000;
+const CRAZY_LO: u32 =1000;
 const DC_ALPHA: f64 = 1.0/1000.0;
 const LP_ALPHA: f64 = 1.0/100.0;
 const THRESHOLD_ALPHA_UP: f64 = 1.0/100.0;
@@ -19,7 +19,7 @@ pub struct Hr {
     n : usize, // Monotonic counter of calls to `tick`
     state : u8,
     timer : usize,
-    above_pts : ConstGenericRingBuffer<i32, ABOVE_SIZE>,
+    above_pts : ConstGenericRingBuffer<u32, ABOVE_SIZE>,
 
     last_peak_n : usize,
     hr : f64,
@@ -27,7 +27,7 @@ pub struct Hr {
 
 impl Hr {
     pub fn new() -> Hr {
-        let yc = 32768i32; // Assumed center of the range for starting filters out
+        let yc = 32768u32; // Assumed center of the range for starting filters out
         Hr {
             dc_ema: yc as f64,
             lp_ema: yc as f64,
@@ -35,7 +35,7 @@ impl Hr {
             n : 0usize,
             state : 0u8,
             timer : 0usize,
-            above_pts : ConstGenericRingBuffer::<i32, ABOVE_SIZE>::new(),
+            above_pts : ConstGenericRingBuffer::<u32, ABOVE_SIZE>::new(),
             last_peak_n : 0usize,
             hr : 0f64,
         }
@@ -64,8 +64,8 @@ impl Hr {
         };
 
         let yc: u32 = self.dc_ema as u32;
-        let y0: u32 = ((yc as i32)+CRAZY_LO) as u32;
-        let y1: u32 = ((yc as i32)+CRAZY_HI) as u32;
+        let y0: u32 = yc-CRAZY_LO;
+        let y1: u32 = yc+CRAZY_HI;
         if y0 < x && x < y1 {
             if self.threshold_ema < fx {
                 self.threshold_ema += (fx - self.threshold_ema) * THRESHOLD_ALPHA_UP;
@@ -84,7 +84,7 @@ impl Hr {
                 }
             }
             if self.state == 1 {
-                self.above_pts.push(x as i32); // AHA, that is the problem.  That is why it is signed.
+                self.above_pts.push(x);
             }
         } else {
             // Crazy value, reset state machine
@@ -104,7 +104,7 @@ impl Hr {
     fn update_hr(&mut self, start_n : usize) -> u32 {
         // Search for peak in above data
         if self.above_pts.capacity() > 1 {
-            let mut above_max = 0i32;
+            let mut above_max = 0u32;
             let mut above_ix = 0usize;
             // This is slow when not --release, and after_ticks is the problem
             for (i, val) in self.above_pts.iter().enumerate() {
