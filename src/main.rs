@@ -266,12 +266,6 @@ async fn main(spawner: Spawner) {
     //        And set oversampling to 16x and enable it
     //    Slow down ADC clock to /12 to also reduce noise
 
-    /* Unsafe way
-    unsafe { let p : *mut u32 = 0x4002200c as *mut u32; *p = 0x80000008; } // 008=12 bit
-    unsafe { let p : *mut u32 = 0x40022010 as *mut u32; *p = 0x000f0001; } // f=16x ovs, 001=ovs on
-    unsafe { let p : *mut u32 = 0x40022308 as *mut u32; *p = 6 << 18; } // Slow down clock
-    */
-
     // Reduce resolution: that is exposed in Embassy HAL
     adc.set_resolution(Resolution::TwelveBit);
 
@@ -284,25 +278,6 @@ async fn main(spawner: Spawner) {
     let adcc = embassy_stm32::pac::ADC_COMMON;
     adcc.ccr().modify(|m| m.set_presc(
         embassy_stm32::pac::adccommon::vals::Presc::DIV12));
-
-    /*
-    // Readback
-    let res = adc1.cfgr().read().res();
-    let resname = match res {
-        embassy_stm32::pac::adc::vals::Res::SIXTEENBIT => 16,
-        embassy_stm32::pac::adc::vals::Res::FOURTEENBIT => 14,
-        embassy_stm32::pac::adc::vals::Res::TWELVEBIT => 12,
-        embassy_stm32::pac::adc::vals::Res::TENBIT => 10,
-        embassy_stm32::pac::adc::vals::Res::EIGHTBIT => 8,
-        _ => 99,
-    };
-    let r2200c = unsafe { let p : *mut u32 = 0x4002200c as *mut u32; *p }; // 0x80000008
-    let r22010 = unsafe { let p : *mut u32 = 0x40022010 as *mut u32; *p }; // 0x000f0001
-    let r22308 = unsafe { let p : *mut u32 = 0x40022308 as *mut u32; *p }; // 0x00180000
-    let mut msg : String<64> = String::new();
-    core::fmt::write(&mut msg, format_args!("00c:{:08x} {:?}\n010:{:08x}\n308:{:08x}\n", r2200c, resname, r22010, r22308)).unwrap();
-    _ = (uart_ref).write(msg.as_bytes()).await;
-    */
 
     // Peform the ADC task
     let mut now = Instant::now().as_millis();
