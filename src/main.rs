@@ -5,7 +5,7 @@
 
 // use defmt::*;
 use embassy_executor::Spawner;
-use embassy_stm32::adc::Adc;
+use embassy_stm32::adc::{Adc,Resolution};
 use embassy_stm32::gpio::{Level, Input, Output, Pull, Speed};
 use embassy_stm32::usart::{Config, UartTx};
 use embassy_time::{Timer,Instant,Delay};
@@ -254,15 +254,30 @@ async fn main(spawner: Spawner) {
     // Kick off the display task
     _ = spawner.spawn(c5412::process(c5412pins_ref, &DISP_VALUE_ATOMIC));
 
-    // Setup the ADC. This is a bit too fancy right now!
-    // At the very least, should use metapac to poke ADC registers
+    //
+    // Setup the ADC. This is a bit fancy right now!
+    //
     let mut delay = Delay;
     let mut adc = Adc::new(p.ADC1, &mut delay);
-    // Turn on ADC oversampling - reduces noise
-    unsafe { let p : *mut u32 = 0x4002200c as *mut u32; *p = 0x80000008; } // 008=12 bit
-    unsafe { let p : *mut u32 = 0x40022010 as *mut u32; *p = 0x000f0001; } // f=16x oversample, 001=ovs on
-    // Turn down clock - reduces noise
-    unsafe { let p : *mut u32 = 0x40022308 as *mut u32; *p = 6 << 18; } // Slow down clock to /12 (0x0018)
+
+    // Configure things that don't come with default:
+    //    Turn on 16x oversampling to reduce noise
+    //        Need to reduce sampling resolution to 12 bit
+    //        And set oversampling to 16x and enable it
+    //    Slow down ADC clock to /12 to also reduce noise
+
+    // Reduce resolution: that is exposed in Embassy HAL
+    adc.set_resolution(Resolution::TwelveBit);
+
+    // Turn on oversampling directly using PAC
+    let adc1 = embassy_stm32::pac::ADC1;
+    adc1.cfgr2().modify(|m| m.set_osvr(0xf));
+    adc1.cfgr2().modify(|m| m.set_rovse(true));
+
+    // Slow down clock directly using PAC
+    let adcc = embassy_stm32::pac::ADC_COMMON;
+    adcc.ccr().modify(|m| m.set_presc(
+        embassy_stm32::pac::adccommon::vals::Presc::DIV12));
 
     // Peform the ADC task
     let mut now = Instant::now().as_millis();
