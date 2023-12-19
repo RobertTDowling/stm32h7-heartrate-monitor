@@ -43,7 +43,7 @@ enum DebugMode {
     DumpTiming, // Display time spent in ADC and process_hr task
 }
 
-const DEBUG_MODE : DebugMode = DebugMode::Hr(HrDebugMode::DisplayOverrun);
+const DEBUG_MODE : DebugMode = DebugMode::DumpSamples;
 
 //
 // Things needed for 14-segment driver processing task
@@ -132,7 +132,7 @@ async fn process_hr(uart_ref: &'static mut UART,
                 let dadc_n = adc_n-adc_n0;
                 let dnow = now-now0;
                 msg.clear();
-                core::fmt::write(&mut msg, format_args!("{} {}\n",  dadc_n, dnow)).unwrap();
+                core::fmt::write(&mut msg, format_args!("{} {}\n", dadc_n, dnow)).unwrap();
                 _ = (uart_ref).write(msg.as_bytes()).await;
                 adc_n0 = adc_n;
                 now0 = now;
@@ -141,7 +141,8 @@ async fn process_hr(uart_ref: &'static mut UART,
             }
             DebugMode::DumpSamples => {
                 msg.clear();
-                core::fmt::write(&mut msg, format_args!("{} {}\n",  cooked_sample, if lp {1} else {0})).unwrap();
+                core::fmt::write(&mut msg, format_args!("{} {:.1}\n", cooked_sample,
+                                 if hr_update != 0 { hr.hr() } else {0.0})).unwrap();
                 _ = (uart_ref).write(msg.as_bytes()).await;
                 // NOTE: we restart loop early here to avoid other UART output!
                 continue;
