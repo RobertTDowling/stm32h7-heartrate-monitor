@@ -223,7 +223,7 @@ It is easy enough to consider the pulse as starting when
 enough previous samples have all been below the asymmetric EMA, and
 the next sample is above the asymmetric EMA
 
-### For the first criteria, what is enough samples?
+### For the first criteria, what are enough samples?
 
 Based on ideas from the [Pan–Tompkins algorithm](https://en.wikipedia.org/wiki/Pan%E2%80%93Tompkins_algorithm) for detecting pulses in electrocardiogram waves, the main peak of the pulse is stated to have a minimum width of 150ms–the heart just can’t pulse again that quickly.
 
@@ -233,20 +233,30 @@ How do we determine when the pulse ends?
 
 Because the asymmetric EMA cuts through the pulse wave higher on the right than on the left, it didn’t make sense to use the same technique to find the end of the pulse. It would cut off too much of the pulse, and we’d have less data to work with. If we decided to do curve fitting, for example, less data would mean a less accurate fit, or one more subject to noise. In fact, that downward crossing comes long before the expected 200ms width. I punted here and declared the pulse ended exactly 200ms after it starts. Depending on how late we start, we might pick up some non-peak data at the end.  The peak detector would have to deal with that.
 
-## The Hair Plots
-
-The hair plots show a collection of peak regions from real data. They show the 200ms of peak data in red, with an extra 50ms on either side in blue for context. When the peaks are all superimposed on each other, the 200ms data distributes roughly evenly on both sides of the peak. In some cases, horrible things happen, but mostly it works well. Changing the end point to 150ms after the start would probably make them all lopsided.
-
-![graphic5a-hairplots.png](/doc/graphic5a-hairplots.png)
+![graphic6.png](/doc/graphic6.png)
 
 ## Determining the peak within the region
-
-![graphic6.png](/doc/graphic6.png)
 
 Peak finding is an art. Octave uses this trick:
 
 * Fit a quadratic polynomial and find its maximum
 
-Experimentally the 200ms region does not fit a parabola well, and doing so almost always moves the peak dozens of samples to the right. I know people say not to fit to higher order polynomials, but a 3rd order fits better and a 5th order fit very well.
+Experimentally the 200ms region does not fit a parabola well, and doing so almost always moves the peak dozens of samples to the right. I know people say not to fit to higher order polynomials because of [bad behavior](https://en.wikipedia.org/wiki/Runge%27s_phenomenon) on the ends, but a 3rd order fits better, and a 5th order fits very well.
 
-But the current implementation does not do any curve fitting. Since the data is low passed, it is fairly smooth, so it simply searches for the maximum. (FIXME: this probably should be changed, since the heart rate seems to fluctuate a fair amount currently, more than I think it does physiologically. Misplacing the peak will have a direct impact on the heart rate calculation.)
+![Polynomial fits to peak region](/doc/graphic-polyfit.png)
+
+So is curve fitting necessary? Is just finding the maximum a good enough approximation to the actual peak? Compare the histograms of the peak position errors in the top row with the actual peak-to-peak wave length differences in the bottom row, taken from a large set of pulses. We define the peak position error to be the difference in horizontal peak location between `max` on the samples and `max` on the the 5th order polynomial fit.
+
+Even if we don't low-pass filter the data, the error distribution is 1/10th as wide as the distribution of wave lengths. The errors from estimating the peak without doing a polynomial fit do not account for the variances in wave lengths.
+
+
+> [!TIP]
+> Finding the max of the sample data is a good enough approximation to finding the actual peak for the heart rate calculation
+
+![Polynomial fits to peak region](/doc/graphic-peak-histos.png)
+
+## The Hair Plots
+
+The hair plots show a collection of peak regions from real data. They show the 200ms of peak data in red, with an extra 50ms on either side in blue for context. When the peaks are all superimposed on each other, the 200ms data distributes roughly evenly on both sides of the peak. In some cases, horrible things happen, but mostly it works well. Changing the end point to 150ms after the start would probably make them all lopsided.
+
+![graphic5a-hairplots.png](/doc/graphic5a-hairplots.png)
