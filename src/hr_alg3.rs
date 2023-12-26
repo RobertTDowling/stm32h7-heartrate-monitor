@@ -2,8 +2,8 @@
 
 use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
 
-const CRAZY_HI: u32 =3000;
-const CRAZY_LO: u32 =1000;
+const CRAZY_HI: u32 = 3000;
+const CRAZY_LO: u32 = 1000;
 const DC_ALPHA: f64 = 1.0/1000.0;
 const LP_ALPHA: f64 = 1.0/100.0;
 const THRESHOLD_ALPHA_UP: f64 = 1.0/100.0;
@@ -27,17 +27,17 @@ pub struct Hr {
 
 impl Hr {
     pub fn new() -> Hr {
-        let yc = 32768u32; // Assumed center of the range for starting filters out
+        let yc: u32 = 32768; // Assumed center of range for starting filters out
         Hr {
             dc_ema: yc as f64,
             lp_ema: yc as f64,
             threshold_ema: yc as f64,
-            n : 0usize,
-            state : 0u8,
-            timer : 0usize,
-            above_pts : ConstGenericRingBuffer::<u32, ABOVE_SIZE>::new(),
-            last_peak_n : 0usize,
-            hr : 0f64,
+            n: 0,
+            state: 0,
+            timer: 0,
+            above_pts: ConstGenericRingBuffer::<u32, ABOVE_SIZE>::new(),
+            last_peak_n: 0,
+            hr: 0.0,
         }
     }
     // Process one sample; output a mess of things....
@@ -104,8 +104,8 @@ impl Hr {
     fn update_hr(&mut self, start_n : usize) -> u32 {
         // Search for peak in above data
         if self.above_pts.capacity() > 1 {
-            let mut above_max = 0u32;
-            let mut above_ix = 0usize;
+            let mut above_max: u32 = 0;
+            let mut above_ix: usize = 0;
             // This is slow when not --release, and after_ticks is the problem
             for (i, val) in self.above_pts.iter().enumerate() {
                 // Timer::after_ticks(0).await; // yield
