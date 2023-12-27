@@ -320,12 +320,12 @@ I considered many approaches.
 I finally landed on an asymmetric version of the EMA, where the α parameter varies based on whether the new data point is above or below the current moving average. (There is probably a name for this… if you know it, let me know!)
 
 > [!NOTE]
-```
-if x>y:
-    y += a_above*(x-y)
-else:
-    y += a_below*(x-y)
-```
+> ```
+> if x>y:
+>     y += a_above*(x-y)
+> else:
+>     y += a_below*(x-y)
+> ```
 
 Setting `a_above = a_below`, we get the normal EMA. Making `a_above` significantly larger (i.e, a shorter time constant, faster moving) than `a_below`, the filter skews high. It is quick to move up, but slow to come back down again. In practice, `a_above=1/100` and `a_below=1/2000` works amazingly well, and is trivially more expensive to compute than the normal EMA. No history, no sorting to find a histogram, no numerically unstable narrow band filter. Yay.
 
@@ -359,7 +359,7 @@ Experimentally the 200ms region does not fit a parabola well, and doing so almos
 
 So is curve fitting necessary? Is just finding the maximum a good enough approximation to the actual peak? Compare the set of four histograms below of the peak position errors (top row) with the actual peak-to-peak wave length differences (bottom row) taken from a large set of pulses. We define the peak position error to be the difference in horizontal peak location between `max` on the samples and `max` on the the 5th order polynomial fit.
 
-In a nut shell, the upper histograms show how much error skipping the polynomial fit imposes. The lower histograms show how much overall pulse periods fluctuate, using the best polynomial fit for the maximum. On the left are data that has been low-passed; on the right is raw data
+In a nut shell, the upper histograms show how much error skipping the polynomial fit imposes. The lower histograms show how much overall pulse periods fluctuate, using the best polynomial fit for the maximum. On the left are data that has been low-passed; on the right are raw data.
 
 The errors from estimating the peak without doing a polynomial fit do not account for the variances in wave lengths. Even if we don't low-pass the data, the error distribution is 1/10th as wide as the distribution of wave lengths.
 
