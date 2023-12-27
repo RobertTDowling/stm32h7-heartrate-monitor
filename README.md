@@ -202,13 +202,13 @@ Here is a zoom up on a single pulse, lasting just over 1200 ms. This signal is a
 
 * RaspberryPi pulse heart rate sensor hooked up to an ADC input.
 
-The sensor is really small, and it has a very green LED light. It has 3 leads: Gnd, 3.3V, and Signal. It didn’t come with any more documentation. Presumably the sensor has a high-gain amplifier that is AC coupled with an approximately 5 second time constant. If everything is normal, the sensor drifts back to center of the ADC range after this much time.
+The sensor is really small, and it has a very green LED light. It has 3 leads: GND, 3.3V, and Signal. It didn’t come with any more documentation. Presumably the sensor has a high-gain amplifier that is AC coupled with an approximately 5 second time constant. If everything is normal, the sensor drifts back to center of the ADC range after this much time.
 
 The Nucleo-L073 can be configured to read a built-in 12 bit ADC in 16x oversample mode and still achieve 1MHz sampling rate or more. The oversampling is further configured to not down-shift the data, so the ADC effectively reads 16 bit samples. It takes less than a microsecond to read the ADC in this mode, so the sample-and-hold is left open as long as possible to reduce noise. Using a timer, the ADC is read once a millisecond.
 
 Data is sampled at 1kHz as explained above. There is nothing magical about that value, it is just relatively slow, yet high enough that we can be fairly confident we can see the things we want to see–even the things we don’t want to see (60Hz)–without flooding ourselves with data. It also makes the numbers work out nicely because we can work with 1 sample = 1 millisecond.
 
-Printf(“%d”) ASCII data is sent out the UART3 serial port at 115200 baud. At this rate, a 16-bit decimal number of 5 digits plus a newline takes a little over half the UART bandwidth to transmit. The Nucleo conveniently provides a USB FTDI device to a PC, which can run a terminal program to capture the output.
+`Printf(“%d”)` ASCII data is sent out the UART3 serial port at 115200 baud. At this rate, a 16-bit decimal number of 5 digits plus a newline takes a little over half the UART bandwidth to transmit. The Nucleo conveniently provides a USB FTDI device to a PC, which can run a terminal program to capture the output.
 
 At least for collecting data, nothing more was needed.
 
@@ -268,7 +268,7 @@ A low-pass filter is a simple fist step to removing the background noise that wo
 > $\textrm{Let }T=1/\alpha$
 >
 > * After T samples, the output will have converged 63.2% (or $1-e^{-1}$) to the input
-> * Rule of thumb: 5T gets you within ½% of the final value, since exp(-5) = 0.0067
+> * Rule of thumb: 5T gets you within 1% of the final value, since exp(-5) = 0.0067
 > * Any given input sample will “spend” T samples worth of time in the filter when all the fractions multiplied by their age are added up
 > * The cutoff frequency (FC) of the EMA filter is (for small $\alpha$)
 >   * FC=radians/sample
@@ -299,7 +299,7 @@ While it would be nice to throw out crazy samples before computing the baseline,
 
 So we have to live with our system going out of kilter for a few seconds when the user moves their hand.
 
-With a reasonably good estimate of the baseline, we can define some thresholds based on a large number of samples. Looking at a few hours of pulse data from a couple different users, I established the high level at baseline+3000, and the low level-1000 for a 16 bit ADC. (FIXME: more can be done here to make it less ad-hoc.)
+With a reasonably good estimate of the baseline, we can define some thresholds based on a large number of samples. Looking at a few hours of pulse data from a couple different users, I established the high level at `baseline+3000`, and the low level at `baseline-1000` for a 16 bit ADC. (FIXME: more can be done here to make it less ad-hoc.)
 
 ![graphic3a.png](/doc/graphic3a.png)
 
@@ -319,6 +319,7 @@ I considered many approaches.
 
 I finally landed on an asymmetric version of the EMA, where the α parameter varies based on whether the new data point is above or below the current moving average. (There is probably a name for this… if you know it, let me know!)
 
+> [!NOTE]
 ```
 if x>y:
     y += a_above*(x-y)
@@ -326,7 +327,7 @@ else:
     y += a_below*(x-y)
 ```
 
-Setting `a_above = a_below`, we get the normal EMA. Making a_above significantly larger (i.e, a shorter time constant, faster moving) than a_below, the filter skews high. It is quick to move up, but slow to come back down again. In practice, `a_above=1/100` and `a_below=1/2000` works amazingly well, and is trivially more expensive to compute than the normal EMA. No history, no sorting to find a histogram, no numerically unstable narrow band filter. Yay.
+Setting `a_above = a_below`, we get the normal EMA. Making `a_above` significantly larger (i.e, a shorter time constant, faster moving) than `a_below`, the filter skews high. It is quick to move up, but slow to come back down again. In practice, `a_above=1/100` and `a_below=1/2000` works amazingly well, and is trivially more expensive to compute than the normal EMA. No history, no sorting to find a histogram, no numerically unstable narrow band filter. Yay.
 
 ![graphic4.png](/doc/graphic4.png)
 
@@ -356,7 +357,7 @@ Experimentally the 200ms region does not fit a parabola well, and doing so almos
 
 ![Polynomial fits to peak region](/doc/graphic-polyfit.png)
 
-So is curve fitting necessary? Is just finding the maximum a good enough approximation to the actual peak? Compare the set of four histograms below of the peak position errors in the top row with the actual peak-to-peak wave length differences in the bottom row, taken from a large set of pulses. We define the peak position error to be the difference in horizontal peak location between `max` on the samples and `max` on the the 5th order polynomial fit.
+So is curve fitting necessary? Is just finding the maximum a good enough approximation to the actual peak? Compare the set of four histograms below of the peak position errors (top row) with the actual peak-to-peak wave length differences (bottom row) taken from a large set of pulses. We define the peak position error to be the difference in horizontal peak location between `max` on the samples and `max` on the the 5th order polynomial fit.
 
 In a nut shell, the upper histograms show how much error skipping the polynomial fit imposes. The lower histograms show how much overall pulse periods fluctuate, using the best polynomial fit for the maximum. On the left are data that has been low-passed; on the right is raw data
 
@@ -364,7 +365,7 @@ The errors from estimating the peak without doing a polynomial fit do not accoun
 
 
 > [!TIP]
-> Finding the max of the sample data is a good enough approximation to finding the actual peak for the heart rate calculation
+> Finding the max of the sample data is a good enough approximation to polynomial fitting for the actual heart rate calculation.
 
 ![Polynomial fits to peak region](/doc/graphic-peak-histos.png)
 
