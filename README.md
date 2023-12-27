@@ -21,20 +21,22 @@
 ## Hardware Architecture
 
 * Goals
-  * All off-the-shelf hardware with exception of bare 7-segment LED display
+  * All off-the-shelf hardware
 * BOM
   * RaspberryPi/Arduino-style 3.3V analog 3-pin pulse heart rate sensor with integrated low noise signal amp, $4 (Amazon)
+  * Surplus 7-segment Common Cathode LED display
+
 For a stand-alone CubeMX data acquisition
   * [NUCLEO-L073RZ](https://www.mouser.com/ProductDetail/STMicroelectronics/NUCLEO-L073RZ) devkit with USB power and built in FTDI and ST-Link, $14 (mouser)
+
 For a well supported Rust embedded platform:
   * [NUCLEO-H743ZI2](https://www.mouser.com/ProductDetail/511-NUCLEO-H743ZI2) devkit with USB power and built in FTDI and ST-Link, $27 (mouser)
-  * Surplus 7-segment Common Cathode LED display
 
 ## Firmware Architecture
 
 * Cooperative multitasking with quasi-real-time requirement in sampling and display tasks
-  * ADC sampling task ticks at 1kHz. Ideally a very precise 1kHz for signal processing reasons
-  * Display task needs to tick overall at >50Hz to avoid flicker. Variations of or off periods will appear as visual glitches or brighter or darker digits
+  * ADC sampling task ticks at 1kHz. Ideally a very ~precise~ consistent 1kHz for signal processing reasons
+  * Display task needs to tick overall at >50Hz to avoid flicker. Variations of on or off periods will appear as visual glitches or brighter or darker digits
   * HR task takes up the background processing slack, but at this time, only the UART I/O and sample channel operate async. Ideally, the processing would also have scheduler yields embedded in it, but without compiler optimization, they noticeably degrade the performance of the display task, so they were removed.  Something to revisit and explain!
 
 ![HR FW Task Diagram](/doc/HR%20FW%20Architecture.png)
@@ -42,8 +44,8 @@ For a well supported Rust embedded platform:
 
 * Reading the ADC
   * Simply sample ADC at a regular rate and place output in Channel queue for processing later
-  * ADC configured to minimize noise
-    * 16x oversampling enabled (with `unsafe` raw point: FIXME, use `stm-metapac`) with no down-shift on 12 bit conversion to result in 16 bit samples
+  * ADC configured to minimize noise using `stm32-metapac`
+    * 16x oversampling enabled with no down-shift on 12 bit conversion to result in 16 bit samples
     * Changes to ADC Sample/Hold did not seem to have any effect on noise, so lowered ADC clock rate instead and found sweet spot at about 1/10th the default sample rate
     * ADC sampling takes about 50us in this mode, far less than 1kHz overall sample rate.
   * Size of channel determined empirically by watching amount of overruns with various processing and I/O loads during algorithm development
@@ -53,6 +55,7 @@ For a well supported Rust embedded platform:
 * Driving the Display
   * All LED inputs are driven directly from MCU GPIO output pins, which have an assumed lowish current limit of approximately 20mA (FIXME: Check this)
   * Each segment is driven by 1 dedicated output GPIO; each cathode is driven by 8 dedicated output GPIOs to distribute the load
+    * So to turn on a given segment, two GPIO are switched as a pair, one high and one low
   * Display is PWM'd to avoid frying the device
   * Overall refresh rate must exceed visual detection, >50Hz
     * Can drive 7 segments at once, but only 1 digit at a time due to common cathode
@@ -78,8 +81,8 @@ For a well supported Rust embedded platform:
 ## Rust + Embassy Specific Development Issues
 * General IPC
   * Atomics to drive display update, since we don't care if we miss a change, we'll pick it up next refresh
-  * Channel to pass data from ADC task to Processing task so we don't lose data
-    * Use of Channel (queue) to buffer periodic slowdown in processing task
+  * Channel (queue) to pass data from ADC task to Processing task so we don't lose data
+    * Use of Channel to buffer periodic slowdown in processing task
     * Sizing that buffer
     * Detecting overflow and handling (or not)
 * Passing Parameters to Tasks
@@ -92,7 +95,7 @@ For a well supported Rust embedded platform:
     * Needing to share or own Peripherals
       * Can't have two threads accessing a single peripheral at same time
       * To avoid adding mutex locks, divvied up peripherals between tasks so each has exclusive access
-      * One pain point, the UART used for console logging has to be controlled by one task, and the others had to message any logging they wanted back to that task
+      * One pain point: the UART used for console logging has to be controlled by one task, and the others had to message any logging they wanted back to that task
 * Balancing Cooperative Multitasking
   * Yielding to scheduler above and beyond Embassy's built-in I/O `async` operations when having to perform long computations
     * Display driver is highest priority, since it protects the LEDs and more importantly, it is performing a software PWM; any changes in the duty cycle will be immediately apparent to the user as flickering brightness
@@ -102,7 +105,7 @@ For a well supported Rust embedded platform:
   * Finding a scheduler `yield` operation: `Timer::after_ticks(0).await`
   * Discovering that `yield` is a fairly expensive operation when optimization is turned off, with occasional very long delays
     * Irony that background task frequent yielding actually slowed display foreground task, and best performance resulted from running processing straight through
-      * Found and fixed race condition in Embassy, see [Pull Request on Github](https://github.com/embassy-rs/embassy/pull/2300)
+      * Found and fixed a race condition in Embassy that led to occasional very long delays, see [pull request on embassy-rs github](https://github.com/embassy-rs/embassy/pull/2300)
 
 
 # Algorithm Development Story
@@ -123,7 +126,7 @@ It is always a good idea to look at your data before you make any decisions. I r
 
 One of the sensor vendors posted a short Arduino sketch to exercise the device. It was less than a screen of code. It read the ADC at 20ms intervals, compared this sample to the last, looking for a large positive change to “detected a peak”. It computed a heart rate from the time between peaks.
 
-I wrote a very cheap loop in C using [ST’s CubeMX](https://www.st.com/en/development-tools/stm32cubemx.html) generated HAL to read the ADC at 50Hz or 1kHz and printf the raw value on the UART. Most Nucleo boards conveniently provide a built-in FTDI, so from the PC, I could log the data using PuTTY and start looking at it in Octave.
+I wrote a very cheap loop in C using [ST’s CubeMX](https://www.st.com/en/development-tools/stm32cubemx.html) generated HAL to read the ADC at 50Hz or 1kHz and `printf` the raw value on the UART. Most Nucleo boards conveniently provide a built-in FTDI, so from the PC, I could log the data using PuTTY and start looking at it in Octave.
 
 > [!NOTE]
 > Manual captures were made with [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html) and analyzed in [Octave](https://octave.org/) (Matlab)
@@ -306,12 +309,13 @@ I really struggled with a robust way to segment the large peak from the rest of 
 
 Actually, the baseline estimate curve from the previous section comes tantalizingly close to cutting the peak in the right place, and ultimately something similar was used. But when noise levels got too high, it became too easy for stray wiggles to appear to be the start of another pulse.
 
-I considered many approaches
-Adding a small offset to the estimated baseline, but it would not work with a very wide range of signal/noise ratios.
-Looking at the slope of the data (like the Arduino sketch), but simply comparing neighboring samples would not be robust in the face of noise.
-Computing a local maximum and local minimum, say of the last 2 seconds of data, along with a fixed ratio like 1/3rd of the way between the minimum and maximum to set a threshold. But it seemed like a lot of data to hang onto, and a lot of maxes and mins to compute on every sample. While a modern MCU could easily handle the load, it didn’t seem elegant. And when the new Nucleo proved to have much more ADC noise, that fixed ratio between low and high would have been a problem.
-Look a histogram of the last, say 2 seconds, of data, expecting a long tail on the right side, and put the threshold on the knee to the right of the mode. Way too much computation and no simple way to detect the distribution knee!
-Bandpass filter the data to only accept the peak. This almost makes the problem worse as such a tight filter rings like crazy. Now have you 5 peaks for every pulse!
+I considered many approaches.
+
+* Adding a small offset to the estimated baseline, but it would not work with a very wide range of signal/noise ratios.
+* Looking at the slope of the data (like the Arduino sketch), but simply comparing neighboring samples would not be robust in the face of noise.
+* Computing a local maximum and local minimum, say of the last 2 seconds of data, along with a fixed ratio like 1/3rd of the way between the minimum and maximum to set a threshold. But it seemed like a lot of data to hang onto, and a lot of maxes and mins to compute on every sample. While a modern MCU could easily handle the load, it didn’t seem elegant. And when the new Nucleo proved to have much more ADC noise, that fixed ratio between low and high would have been a problem.
+* Look a histogram of the last, say 2 seconds, of data, expecting a long tail on the right side, and put the threshold on the knee to the right of the mode. Way too much computation and no simple way to detect the distribution knee!
+* Bandpass filter the data to only accept the peak. This almost makes the problem worse as such a tight filter rings like crazy. Now have you 5 peaks for every pulse!
 
 I finally landed on an asymmetric version of the EMA, where the α parameter varies based on whether the new data point is above or below the current moving average. (There is probably a name for this… if you know it, let me know!)
 
@@ -322,7 +326,7 @@ else:
     y += a_below*(x-y)
 ```
 
-Setting `a_above = a_below`, we get the normal EMA. Making a_above significantly larger (i.e, a shorter time constant, faster moving) than a_below, the filter skews high. It is quick to move up, but slow to come back down again. In practice, this works amazingly well, and is trivially more expensive to compute. No history, no sorting to find a histogram, no numerically unstable narrow band filter.
+Setting `a_above = a_below`, we get the normal EMA. Making a_above significantly larger (i.e, a shorter time constant, faster moving) than a_below, the filter skews high. It is quick to move up, but slow to come back down again. In practice, `a_above=1/100` and `a_below=1/2000` works amazingly well, and is trivially more expensive to compute than the normal EMA. No history, no sorting to find a histogram, no numerically unstable narrow band filter. Yay.
 
 ![graphic4.png](/doc/graphic4.png)
 
@@ -332,7 +336,7 @@ the next sample is above the asymmetric EMA
 
 ### For the first criteria, what are enough samples?
 
-Based on ideas from the [Pan–Tompkins algorithm](https://en.wikipedia.org/wiki/Pan%E2%80%93Tompkins_algorithm) for detecting pulses in electrocardiogram waves, the main peak of the pulse is stated to have a minimum width of 150ms–the heart just can’t pulse again that quickly.
+Based on ideas from the [Pan–Tompkins algorithm](https://en.wikipedia.org/wiki/Pan%E2%80%93Tompkins_algorithm) for detecting pulses in electrocardiogram waves, the main peak of the pulse is stated to have a minimum width of 150ms–the heart just can’t pulse again any faster than that.
 
 Mulling over the data I had, the pulse widths seem closer to 200ms. Although they look superficially similar, a photoplethysmogram is not an ECG. The waves are different, and the mechanism that generates them is different too. The ECG is a measure of the electrical activation of the heart muscle. The photoplethysmogram is a measure of the changing blood volume in an extremity, which is a result of the pressure wave from the heart beat, acting against the resistance of the arteries. They don’t seem comparable. I felt justified in making this change and modeled my pulse with as 200ms.
 
@@ -352,9 +356,11 @@ Experimentally the 200ms region does not fit a parabola well, and doing so almos
 
 ![Polynomial fits to peak region](/doc/graphic-polyfit.png)
 
-So is curve fitting necessary? Is just finding the maximum a good enough approximation to the actual peak? Compare the histograms of the peak position errors in the top row with the actual peak-to-peak wave length differences in the bottom row, taken from a large set of pulses. We define the peak position error to be the difference in horizontal peak location between `max` on the samples and `max` on the the 5th order polynomial fit.
+So is curve fitting necessary? Is just finding the maximum a good enough approximation to the actual peak? Compare the set of four histograms below of the peak position errors in the top row with the actual peak-to-peak wave length differences in the bottom row, taken from a large set of pulses. We define the peak position error to be the difference in horizontal peak location between `max` on the samples and `max` on the the 5th order polynomial fit.
 
-Even if we don't low-pass filter the data, the error distribution is 1/10th as wide as the distribution of wave lengths. The errors from estimating the peak without doing a polynomial fit do not account for the variances in wave lengths.
+In a nut shell, the upper histograms show how much error skipping the polynomial fit imposes. The lower histograms show how much overall pulse periods fluctuate, using the best polynomial fit for the maximum. On the left are data that has been low-passed; on the right is raw data
+
+The errors from estimating the peak without doing a polynomial fit do not account for the variances in wave lengths. Even if we don't low-pass the data, the error distribution is 1/10th as wide as the distribution of wave lengths.
 
 
 > [!TIP]
@@ -364,6 +370,8 @@ Even if we don't low-pass filter the data, the error distribution is 1/10th as w
 
 ## The Hair Plots
 
-The hair plots show a collection of peak regions from real data. They show the 200ms of peak data in red, with an extra 50ms on either side in blue for context. When the peaks are all superimposed on each other, the 200ms data distributes roughly evenly on both sides of the peak. In some cases, horrible things happen, but mostly it works well. Changing the end point to 150ms after the start would probably make them all lopsided.
+The hair plots show a collection of peak regions from real data. They address the question, "Are the actual peaks fairly well centered in the short (200ms) buffer of data we have at our disposal for analysis in real-time?"
+
+They show the 200ms of peak data in red, with an extra 50ms on either side in blue for context. When the peaks are all superimposed on each other, the 200ms data distributes roughly evenly on both sides of the peak. In some cases, horrible things happen, but mostly it works well. Changing the end point to 150ms after the start would probably make them all lopsided.
 
 ![graphic5a-hairplots.png](/doc/graphic5a-hairplots.png)
