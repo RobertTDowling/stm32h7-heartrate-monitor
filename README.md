@@ -320,6 +320,7 @@ I considered many approaches.
 I finally landed on an asymmetric version of the EMA, where the α parameter varies based on whether the new data point is above or below the current moving average. (There is probably a name for this… if you know it, let me know!)
 
 > [!NOTE]
+> Asymmetric EMA
 > ```
 > if x>y:
 >     y += a_above*(x-y)
